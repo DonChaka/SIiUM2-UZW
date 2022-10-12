@@ -10,16 +10,22 @@
 # (denero@cs.berkeley.edu) and Dan Klein (klein@cs.berkeley.edu).
 # Student side autograding was added by Brad Miller, Nick Hay, and
 # Pieter Abbeel (pabbeel@cs.berkeley.edu).
-import itertools
+from itertools import product
 import math
 import random
+
+from networkx import NodeNotFound
+
 import util
+
+import networkx as nx
 
 from game import Agent
 from game import AgentState
 from multiagentTestClasses import MultiagentTreeState
 from pacman import GameState
 from util import manhattanDistance
+
 
 
 class ReflexAgent(Agent):
@@ -314,7 +320,11 @@ class ExpectimaxAgent(MultiAgentSearchAgent):
             _gamestate = gameState.generateSuccessor(self.index, action)
             results.append(self.minim(_gamestate, 0, self.index + 1))
 
-        return legalActions[results.index(max(results))]
+        bestScore = max(results)
+        bestIndices = [index for index in range(len(results)) if results[index] == bestScore]
+        chosenIndex = random.choice(bestIndices)  # Pick randomly among the best
+
+        return legalActions[chosenIndex]
 
     def minim(self, gameState: GameState, depth: int, actorIndex: int) -> float:
         if gameState.isWin() or gameState.isLose():
@@ -351,6 +361,24 @@ def clamp(x, min_v, max_v):
     return max(min_v, min(max_v, x))
 
 
+def generateGraph(gameState: GameState) -> nx.Graph:
+    G = nx.Graph()
+    walls = gameState.getWalls()
+    width, height = walls.width, walls.height
+    positions = list(product(range(1, width), range(1, height)))
+    G.add_nodes_from(positions)
+    for x, y in positions:
+        if not walls[x][y]:
+            if not walls[x+1][y]:
+                G.add_edge((x, y), (x+1, y))
+            if not walls[x][y+1]:
+                G.add_edge((x, y), (x, y+1))
+
+    return G
+
+
+
+
 def betterEvaluationFunction(currentGameState: GameState):
     """
     Your extreme ghost-hunting, pellet-nabbing, food-gobbling, unstoppable
@@ -363,59 +391,45 @@ def betterEvaluationFunction(currentGameState: GameState):
     if currentGameState.isLose():
         return -999999
 
+    G = generateGraph(currentGameState)
+
     score = 0
+
     pos = currentGameState.getPacmanPosition()
     food = currentGameState.getFood()
     width, height = food.width, food.height
-    ghostsStates: list[AgentState] = currentGameState.getGhostStates()
-    walls = currentGameState.getWalls()
 
-    for x, y in itertools.product(range(clamp(pos[0] - 3, 0, width), clamp(pos[0] + 4, 0, width)),
-                                  range(clamp(pos[1] - 3, 0, height), clamp(pos[0] + 4, 0, height))):
-        if currentGameState.hasFood(x, y):
-            score += 1
+    ghosts = currentGameState.getGhostStates()
+    scaredGhosts = [ghost for ghost in ghosts if ghost.scaredTimer]
+    nScaredGhosts = len(scaredGhosts)
+    try:
+        closestScaredGhost = min([len(nx.shortest_path(G, ghost.configuration.pos, pos)) for ghost in scaredGhosts], default=0)
+    except NodeNotFound:
+        closestScaredGhost = 0
 
-    for x, y in itertools.product(range(clamp(pos[0] - 1, 0, width), clamp(pos[0] + 2, 0, width)),
-                                  range(clamp(pos[1] - 1, 0, height), clamp(pos[0] + 2, 0, height))):
-        if (x, y) in [ghost.getPosition() for ghost in ghostsStates]:
-            score -= 50
+    try:
+        closestActiveGhost = min([len(nx.shortest_path(G, ghost.configuration.pos, pos)) for ghost in ghosts if not ghost.scaredTimer], default=0)
+    except NodeNotFound:
+        closestActiveGhost = 0
+    try:
+        closestFood = min([len(nx.shortest_path(G, (x, y), pos)) for x, y in product(range(1, width), range(1, height)) if currentGameState.hasFood(x, y)], default=0) - 1
+    except NodeNotFound:
+        closestFood = 0
+    n_food = currentGameState.getNumFood()
 
-    x_food, y_food, n_food = 0, 0, 0
-    min_dist = float('inf')
-    closest_food = (0, 0)
-    for x, y in itertools.product(range(0, width), range(0, height)):
-        if currentGameState.hasFood(x, y):
-            x_food += x
-            y_food += y
-            n_food += 1
+    nScaredGhostsMultiplier = 100
+    foodDistanceMultiplier = -10
+    closestScaredGhostMultiplier = 0
+    closestActiveGhostMultiplier = 0
+    nFoodMultiplier = -250
 
-            dist = getEuclideanDistance((x, y), pos)
-            if dist < min_dist:
-                min_dist = dist
-                closest_food = (x, y)
+    score += nScaredGhosts * nScaredGhostsMultiplier
+    score += closestFood * foodDistanceMultiplier
+    score += closestScaredGhost * closestScaredGhostMultiplier
+    score += closestActiveGhost * closestActiveGhostMultiplier
+    score += n_food * nFoodMultiplier
 
-    score -= min_dist * 25
-
-    if min_dist < 2 and width * height * 0.1 > n_food > 1:
-        wallsPenalty = 10
-        closest_food_direction = (-1 if closest_food[0] - pos[0] < 0 else 1, -1 if closest_food[1] - pos[1] < 0 else 1)
-        # test = (pos[0] + closest_food_direction[0], pos[1] + closest_food_direction[1])
-
-        if walls[pos[0] + closest_food_direction[0]][pos[1]]:
-            score -= wallsPenalty
-
-        if walls[pos[0]][pos[1] + closest_food_direction[1]]:
-            score -= wallsPenalty
-
-        if walls[pos[0] + closest_food_direction[0]][pos[1] + closest_food_direction[1]]:
-            score -= wallsPenalty
-
-    score -= n_food * 75
-    if n_food:
-        food_centre = (x_food / n_food, y_food / n_food)
-        score -= getEuclideanDistance(pos, food_centre)
-
-    return score
+    return score + currentGameState.getScore()
 
 
 # Abbreviation
