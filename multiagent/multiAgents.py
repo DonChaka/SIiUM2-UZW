@@ -391,7 +391,13 @@ def betterEvaluationFunction(currentGameState: GameState):
     if currentGameState.isLose():
         return -999999
 
-    G = generateGraph(currentGameState)
+    global G_244827
+    try:
+        G_244827.adjacency()
+    except:
+        G_244827 = generateGraph(currentGameState)
+
+    # G = generateGraph(currentGameState)
 
     score = 0
 
@@ -403,16 +409,16 @@ def betterEvaluationFunction(currentGameState: GameState):
     scaredGhosts = [ghost for ghost in ghosts if ghost.scaredTimer]
     nScaredGhosts = len(scaredGhosts)
     try:
-        closestScaredGhost = min([len(nx.shortest_path(G, ghost.configuration.pos, pos)) for ghost in scaredGhosts], default=0)
+        closestScaredGhost = min([len(nx.shortest_path(G_244827, ghost.configuration.pos, pos)) for ghost in scaredGhosts], default=0)
     except NodeNotFound:
         closestScaredGhost = 0
 
     try:
-        closestActiveGhost = min([len(nx.shortest_path(G, ghost.configuration.pos, pos)) for ghost in ghosts if not ghost.scaredTimer], default=0)
+        closestActiveGhost = min([len(nx.shortest_path(G_244827, ghost.configuration.pos, pos)) for ghost in ghosts if not ghost.scaredTimer], default=0)
     except NodeNotFound:
         closestActiveGhost = 0
     try:
-        closestFood = min([len(nx.shortest_path(G, (x, y), pos)) for x, y in product(range(1, width), range(1, height)) if currentGameState.hasFood(x, y)], default=0) - 1
+        closestFood = min([len(nx.shortest_path(G_244827, (x, y), pos)) for x, y in product(range(1, width), range(1, height)) if currentGameState.hasFood(x, y)], default=0) - 1
     except NodeNotFound:
         closestFood = 0
     n_food = currentGameState.getNumFood()
