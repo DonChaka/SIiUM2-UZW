@@ -23,7 +23,7 @@ actors = [ArrowKeyboardActor('Player 1', keys),
 board = GameState(SIZE_X, SIZE_Y, SQUARE_SIZE, PADDING)
 board.add_player(SIZE_X // 4, 0)
 board.add_player(int(SIZE_X * 3 // 4), SIZE_Y - 1)
-board._generate_apple()
+
 
 @window.event
 def on_key_press(symbol, modifiers):

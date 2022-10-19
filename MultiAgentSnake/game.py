@@ -87,6 +87,7 @@ class GameState:
     def add_player(self, x: int, y: int) -> NoReturn:
         color = (randint(0, 255), randint(0, 255), randint(0, 255)) if self.snakes else (0, 0, 255)
         self.snakes.append(Snake(x, y, color))
+        self._generate_apple()
 
     def move(self, direction: str, actor_index: int = 0) -> NoReturn:
         if actor_index in self.dead_snakes:
