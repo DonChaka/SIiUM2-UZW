@@ -195,38 +195,44 @@ class GameState:
 
     def _generate_all_possible_states(self, player_length) -> list:
         states = []
+        snakes_recipes = []
+        directions_zip = []
+        temp = list(self.__directions.values())
+        for _ in range(player_length - 1):
+            directions_zip.append(temp)
+        for recipe in product(*directions_zip):
+            snakes_recipes.append(recipe)
+
         for x1, y1 in product(range(self.x_size), range(self.y_size)):
-            p1 = [[x1, y1]]
-            for _ in range(player_length - 1):
-                for dx1, dy1 in [(0, -1), (0, 1), (1, 0), (-1, 0)]:
-                    next_cell1 = [p1[-1][0] + dx1, p1[-1][1] + dy1]
-                    if next_cell1 in p1 or self._out_of_bounds(next_cell1):
-                        continue
-                    else:
-                        p1.append(next_cell1)
+            for recipe1 in snakes_recipes:
+                p1 = [[x1, y1]]
+                for direction1 in recipe1:
+                    next_cell1 = (direction1 + p1[-1]).serialize()
+                    if next_cell1 in p1:
                         break
-
-            for x2, y2 in product(range(self.x_size), range(self.y_size)):
-                if [x2, y2] in p1:
-                    continue
-                p2 = [[x2, y2]]
-                for _ in range(player_length - 1):
-                    for dx2, dy2 in [(0, -1), (0, 1), (1, 0), (-1, 0)]:
-                        next_cell2 = [p2[-1][0] + dx2, p2[-1][1] + dy2]
-                        if next_cell2 in p2 or next_cell2 in p1 or self._out_of_bounds(next_cell2):
-                            continue
-                        else:
-                            p2.append(next_cell2)
-                            break
-                if len(p2) != player_length:
+                    p1.append(next_cell1)
+                if len(p1) != player_length:
                     continue
 
-                for x3, y3 in product(range(self.x_size), range(self.y_size)):
-                    fruit = [x3, y3]
-                    if fruit in p1 or fruit in p2:
+                for x2, y2 in product(range(self.x_size), range(self.y_size)):
+                    if [x2, y2] in p1:
                         continue
-                    state = [self.x_size, self.y_size, fruit, [p1, p2]]
-                    states.append(state)
+                    for recipe2 in snakes_recipes:
+                        p2 = [[x2, y2]]
+                        for direction2 in recipe2:
+                            next_cell2 = (direction2 + p2[-1]).serialize()
+                            if next_cell2 in p2 or next_cell2 in p1:
+                                break
+                            p2.append(next_cell2)
+                        if len(p2) != player_length:
+                            continue
+
+                        for x3, y3 in product(range(self.x_size), range(self.y_size)):
+                            fruit = [x3, y3]
+                            if fruit in p1 or fruit in p2:
+                                continue
+                            state = [self.x_size, self.y_size, fruit, [p1, p2]]
+                            states.append(state)
         return states
 
     def state(self):
@@ -295,16 +301,19 @@ class Game:
         for i, actor in enumerate(self.actors):
             self._state.move(actor.choose_action(self._state.get_state()), i)
 
-# SIZE_X = 8
-# SIZE_Y = 8
-# SQUARE_SIZE = 40
-# PADDING = 3
-#
-# board = GameState(SIZE_X, SIZE_Y, SQUARE_SIZE, PADDING)
-# board.add_player(0, 4, np.array([[0, 5], [0, 6], [0, 7]]))
-# board.add_player(5, 4, np.array([[5, 5], [5, 6], [5, 7]]))
-#
-# all_states = board.get_all_states()
+SIZE_X = 6
+SIZE_Y = 6
+SQUARE_SIZE = 40
+PADDING = 3
+
+board = GameState(SIZE_X, SIZE_Y, SQUARE_SIZE, PADDING)
+board.add_player(0, 3, np.array([[0, 4], [0, 5]]))
+board.add_player(3, 3, np.array([[3, 4], [3, 5]]))
+start = perf_counter()
+all_states = board.get_all_states()
+stop = perf_counter()
+print(f'Generated in {stop - start}s')
+
 # example_state = all_states[41076]
 # print(example_state)
 # _states = board.get_next_states(example_state, 'down')
