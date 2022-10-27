@@ -51,7 +51,7 @@ class ArrowKeyboardActor(Actor):
 class WSADKeyboardActor(Actor):
     def __init__(self, name, key_state_handler: KeyStateHandler):
         super().__init__(name)
-        self.last_action = 'down'
+        self.last_action = 'up'
         self.key_state_handler = key_state_handler
 
     def choose_action(self, game_state: np.ndarray) -> str:
