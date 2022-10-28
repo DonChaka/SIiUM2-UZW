@@ -7,8 +7,8 @@ import numpy as np
 from Actor import ArrowKeyboardActor, WSADKeyboardActor
 from game import Game, GameState
 
-SIZE_X = 8
-SIZE_Y = 8
+SIZE_X = 6
+SIZE_Y = 6
 SQUARE_SIZE = 40
 PADDING = 3
 
@@ -21,8 +21,8 @@ actors = [ArrowKeyboardActor('Player 1', keys),
           WSADKeyboardActor('Player 2', keys)]
 
 board = GameState(SIZE_X, SIZE_Y, SQUARE_SIZE, PADDING)
-board.add_player(0, 4, np.array([[0, 5], [0, 6], [0, 7]]))
-board.add_player(5, 4, np.array([[5, 5], [5, 6], [5, 7]]))
+board.add_player(0, 2, np.array([[0, 3], [0, 4]]))
+board.add_player(5, 2, np.array([[5, 3], [5, 4]]))
 # board.add_player(SIZE_X // 4, 0)
 # board.add_player(int(SIZE_X * 3 // 4), SIZE_Y - 1)
 
