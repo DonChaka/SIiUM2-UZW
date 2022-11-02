@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-import pickle
 import random
 from itertools import product
 from random import randint
 from typing import NoReturn, Optional
-from time import perf_counter, perf_counter_ns
 
-import pyglet
-from pyglet import image
 from pyglet.graphics import Batch
 from pyglet.shapes import Rectangle
 import numpy as np
 from numpy import ndarray
 
-from pyglet.window import key, Window
+from pyglet.window import Window
 
-from Actor import Actor
+# from Actor import Actor
 
 
 class Point:
@@ -54,7 +50,7 @@ class Point:
         return Point(self.x, self.y)
 
     def out_of_bounds(self, x, y) -> bool:
-        return not (0 <= self.x < x and 0 <= self.y <= y)
+        return not (0 <= self.x < x and 0 <= self.y < y)
 
     def serialize(self) -> list:
         return [self.x, self.y]
@@ -66,6 +62,12 @@ class Snake:
         self.body: list[Point] = [Point(body_part[0], body_part[1]) for body_part in body] if body is not None else []
         self._cell_size = 40
         self.color = color
+
+    def __repr__(self):
+        return f'Snake({self.head}, {self.body})'
+
+    def __str__(self):
+        return f'Snake({self.head}, {self.body})'
 
     def move(self, direction: Point, ate: bool = False) -> NoReturn:
         self.body.insert(0, self.head.copy())
@@ -97,11 +99,16 @@ class GameState:
         'right': Point(1, 0),
     }
 
+    __colors = [
+        (0, 0, 255),
+        (176, 98, 9)
+    ]
+
     __game_states_dir = 'gamestates'
     __apple_value = 10
-    __death_value = 50
+    __death_value = 100
 
-    def __init__(self, x_size: int, y_size: int, cell_size: int = 40, padding: int = 5):
+    def __init__(self, x_size: int = 6, y_size: int = 6, snake_length: int = 3, cell_size: int = 40, padding: int = 5):
         self.x_size = x_size
         self.y_size = y_size
 
@@ -114,42 +121,55 @@ class GameState:
         self._padding = padding
         self._garbage = []
 
+        self.__all_states = self._generate_all_possible_states(snake_length)
+        self.reset()
+
+    def isFinished(self):
+        return len(self.dead_snakes)
+
+    def reset(self):
+        index = randint(0, len(self.__all_states) - 1)
+        state_to_set = self.__all_states[index]
+
+        self.snakes: list[Snake] = []
+        self.dead_snakes: list[int] = []
+        self.apple: Point = Point(state_to_set[2][0], state_to_set[2][1])
+
+        for i, snake in enumerate(state_to_set[3]):
+            self.snakes.append(Snake(snake[0][0], snake[0][1], self.__colors[i], snake[1:]))
+
     def add_player(self, x: int, y: int, body: Optional[ndarray]) -> NoReturn:
         color = (randint(0, 255), randint(0, 255), randint(0, 255)) if self.snakes else (0, 0, 255)
         self.snakes.append(Snake(x, y, color, body))
         self._generate_apple()
 
-    def move(self, direction: str, actor_index: int = 0) -> NoReturn:
+    def move(self, direction: str, actor_index: int = 0) -> int:
         if actor_index in self.dead_snakes:
-            return
+            return 0
         target = self.snakes[actor_index].head + self.__directions[direction]
         if target.x < 0 or target.x >= self.x_size or target.y < 0 or target.y >= self.y_size:
             self.dead_snakes.append(actor_index)
-            return
+            return 1
         for snake in self.snakes:
             if snake.collides_with_point(target):
                 self.dead_snakes.append(actor_index)
-                return
+                return 1
 
         if target == self.apple:
             self.snakes[actor_index].move(self.__directions[direction])
             self._generate_apple()
-            self.score += -10 if actor_index else 10
         else:
             self.snakes[actor_index].move(self.__directions[direction])
 
+        return 0
+
     def get_all_states(self) -> list:
-        try:
-            states = self.__all_states
-        except AttributeError:
-            states = self._generate_all_possible_states(len(self.snakes[0].body) + 1)
-            self.__all_states = states
-        return states
+        return self.__all_states
 
     def is_terminal(self):
         return len(self.dead_snakes)
 
-    def get_possible_actions(self, state, actor_index=0):
+    def get_possible_actions(self, state=None, actor_index=0):
         return tuple(self.__directions)
 
     def get_reward(self, state, action, _state):
@@ -174,19 +194,13 @@ class GameState:
         actor_snake = state[3][0].copy()
         other_snake = state[3][1].copy()
         target: Point = self.__directions[action] + actor_snake[0]
-        apple_ate = False
-        if target == Point(state[2][0], state[2][1]):
-            apple_ate = True
         if not (target.out_of_bounds(state[0], state[1]) or target.serialize() in other_snake or target.serialize() in actor_snake):
             actor_snake.insert(0, target.serialize())
             actor_snake.pop()
 
         for _action in self.get_possible_actions(state):
-            apple_changed = apple_ate
             temp_snake = other_snake.copy()
             target = self.__directions[_action] + temp_snake[0]
-            if target == Point(state[2][0], state[2][1]):
-                apple_changed = True
 
             if not (target.out_of_bounds(state[0], state[1]) or target.serialize() in actor_snake or target.serialize() in other_snake):
                 temp_snake.insert(0, target.serialize())
@@ -194,12 +208,17 @@ class GameState:
 
             snakes = [actor_snake, temp_snake]
 
-            if not apple_changed and not apple_ate:
+            if state[2] in actor_snake or state[2] in temp_snake:
+                apple_changed = True
+            else:
+                apple_changed = False
+
+            if not apple_changed:
                 _states.append([state[0], state[1], state[2], snakes])
             else:
                 for x1, y1 in product(range(self.x_size), range(self.y_size)):
                     apple = [x1, y1]
-                    if apple in actor_snake or apple in other_snake:
+                    if apple in actor_snake or apple in temp_snake:
                         continue
                     _states.append([state[0], state[1], apple, snakes])
         return _states
@@ -223,8 +242,7 @@ class GameState:
                 p1 = [[x1, y1]]
                 for direction1 in recipe1:
                     next_cell1 = (direction1 + p1[-1]).serialize()
-                    if next_cell1 in p1:
-                        snakes_recipes.remove(recipe1)
+                    if next_cell1 in p1 or self._out_of_bounds(next_cell1):
                         break
                     p1.append(next_cell1)
                 if len(p1) != player_length:
@@ -237,7 +255,7 @@ class GameState:
                         p2 = [[x2, y2]]
                         for direction2 in recipe2:
                             next_cell2 = (direction2 + p2[-1]).serialize()
-                            if next_cell2 in p2 or next_cell2 in p1:
+                            if next_cell2 in p2 or next_cell2 in p1 or self._out_of_bounds(next_cell2):
                                 break
                             p2.append(next_cell2)
                         if len(p2) != player_length:
@@ -296,42 +314,41 @@ class GameState:
                       color=(0, 255, 0), batch=batch))
 
 
-class Game:
-    def __init__(self, x_size: int, y_size: int, cell_size: int = 40, padding: int = 5, window: Window = None):
-        self._state = GameState(x_size, y_size, cell_size, padding)
-        self.window = window
-        self.actors: list[Actor] = []
+# class Game:
+#     def __init__(self, x_size: int, y_size: int, snake_length, cell_size: int = 40, padding: int = 5,
+#                  window: Window = None):
+#         self._state = GameState(x_size, y_size, snake_length, cell_size, padding)
+#         self.window = window
+#         self.actors: list[Actor] = []
+#
+#     def add_player(self, x: int, y: int, body, actor: Actor) -> NoReturn:
+#         self._state.add_player(x, y, body)
+#         self.actors.append(actor)
+#
+#     @Window.event
+#     def on_draw(self):
+#         self.window.clear()
+#         batch = Batch()
+#         self._state.draw(batch)
+#
+#     def update(self, dt):
+#         for i, actor in enumerate(self.actors):
+#             self._state.move(actor.choose_action(self._state.state()), i)
 
-    def add_player(self, x: int, y: int, body, actor: Actor) -> NoReturn:
-        self._state.add_player(x, y, body)
-        self.actors.append(actor)
+#
+# SIZE_X = 7
+# SIZE_Y = 7
+# SNAKES_LENGTH = 3
+# SQUARE_SIZE = 40
+# PADDING = 3
+#
+# start = perf_counter()
+# board = GameState(SIZE_X, SIZE_Y, SNAKES_LENGTH, SQUARE_SIZE, PADDING)
+# stop = perf_counter()
+# print(f'Generated in {stop - start}s')
 
-    @Window.event
-    def on_draw(self):
-        self.window.clear()
-        batch = Batch()
-        self._state.draw(batch)
-
-    def update(self, dt):
-        for i, actor in enumerate(self.actors):
-            self._state.move(actor.choose_action(self._state.get_state()), i)
-
-
-SIZE_X = 6
-SIZE_Y = 6
-SQUARE_SIZE = 40
-PADDING = 3
-
-board = GameState(SIZE_X, SIZE_Y, SQUARE_SIZE, PADDING)
-board.add_player(0, 1, np.array([[0, 2], [0, 3]]))
-board.add_player(3, 1, np.array([[3, 2], [3, 3]]))
-start = perf_counter()
-all_states = board.get_all_states()
-stop = perf_counter()
-print(f'Generated in {stop - start}s')
-
-example = all_states[215790]
-start = perf_counter()
-_states = board.get_next_states(example, 'right')
-stop = perf_counter()
-print(f'Generated in {stop - start}s')
+# example = all_states[215790]
+# start = perf_counter()
+# _states = board.get_next_states(example, 'right')
+# stop = perf_counter()
+# print(f'Generated in {stop - start}s')
