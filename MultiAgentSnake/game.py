@@ -169,8 +169,9 @@ class GameState:
     def is_terminal(self):
         return len(self.dead_snakes)
 
-    def get_possible_actions(self, state=None, actor_index=0):
-        return tuple(self.__directions)
+    @staticmethod
+    def get_possible_actions(state=None, actor_index=0):
+        return tuple(GameState.__directions)
 
     def get_reward(self, state, action, _state):
         apple = state[2]

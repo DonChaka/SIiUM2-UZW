@@ -2,7 +2,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 from copy import deepcopy
-
+from collections import defaultdict
 import numpy as np
 from pyglet.window import key
 from game import Point
@@ -151,6 +151,93 @@ class PolicyIterationActor(Actor):
         return self.policy[str(game_state)]
 
 
+def defValue():
+    return 0
+
+
+def dd():
+    return defaultdict(defValue)
+
+
+class QLearningActor(Actor):
+    def __init__(self, name, alpha, epsilon, discount, get_legal_actions, min_eps=0.1):
+        super().__init__(name)
+        self.get_legal_actions = get_legal_actions
+        self._qvalues = defaultdict(dd)
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.discount = discount
+        self.min_eps = min_eps
+
+    def save(self, path):
+        with open(path, 'wb') as fp:
+            dump(self._qvalues, fp)
+
+    def load(self, path):
+        with open(path, 'rb') as fp:
+            self._qvalues = load(fp)
+
+    def get_qvalue(self, state, action):
+        return self._qvalues[state][action]
+
+    def set_qvalue(self, state, action, value):
+        self._qvalues[state][action] = value
+
+    def get_value(self, state):
+        possible_actions = self.get_legal_actions(state)
+
+        if len(possible_actions) == 0:
+            return 0.0
+
+        return max([self.get_qvalue(state, action) for action in possible_actions])
+
+    def update(self, state, action, reward, _state):
+        state = str(state)
+        _state = str(_state)
+        gamma = self.discount
+        lr = self.alpha
+
+        Q = (1 - lr) * self.get_qvalue(state, action) + lr * (reward + gamma * self.get_value(_state))
+
+        self.set_qvalue(state, action, Q)
+        self.epsilon -= 0.000001
+        self.epsilon = max(self.epsilon, self.min_eps)
+
+    def get_best_action(self, state):
+        possible_actions = self.get_legal_actions(state)
+
+        if len(possible_actions) == 0:
+            return None
+
+        scores = [self.get_qvalue(state, action) for action in possible_actions]
+        bestScore = max(scores)
+        bestIndices = [index for index in range(len(scores)) if scores[index] == bestScore]
+        chosenIndex = random.choice(bestIndices)  # Pick randomly among the best
+
+        return possible_actions[chosenIndex]
+
+    def choose_action(self, state):
+        possible_actions = self.get_legal_actions(state)
+        state = str(state)
+
+        if len(possible_actions) == 0:
+            return None
+
+        epsilon = self.epsilon
+
+        if random.random() < epsilon:
+            chosen_action = random.choice(possible_actions)
+        else:
+            chosen_action = self.get_best_action(state)
+
+        return chosen_action
+
+    def turn_off_learning(self):
+        self.min_eps = 0
+        self.epsilon = 0
+        self.alpha = 0
+
+
 class RandomSafeActor(Actor):
     __directions = {
         'down': Point(0, 1),
@@ -163,14 +250,14 @@ class RandomSafeActor(Actor):
         super().__init__(name)
         self.index = player_index
 
-    def choose_action(self, game_state: list) -> str:
-        myself = game_state[3][self.index]
+    def choose_action(self, state: list) -> str:
+        myself = state[3][self.index]
 
         possible = []
 
-        for actin, dir in self.__directions.items():
-            target: Point = dir + myself[0]
-            if target.out_of_bounds(game_state[0], game_state[1]) or target.serialize() in myself:
+        for actin, direction in self.__directions.items():
+            target: Point = direction + myself[0]
+            if target.out_of_bounds(state[0], state[1]) or target.serialize() in myself:
                 continue
 
             possible.append(actin)
@@ -179,8 +266,3 @@ class RandomSafeActor(Actor):
             return random.choice(possible)
 
         return random.choice(list(self.__directions.keys()))
-
-
-
-
-

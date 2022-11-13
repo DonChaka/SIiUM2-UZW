@@ -2,21 +2,29 @@ import pyglet
 from pyglet.window import key, Window
 from pyglet.graphics import Batch
 from time import perf_counter
-from Actor import ArrowKeyboardActor, WSADKeyboardActor, PolicyIterationActor, RandomSafeActor
+from Actor import ArrowKeyboardActor, WSADKeyboardActor, PolicyIterationActor, RandomSafeActor, QLearningActor
 from game import GameState
 
 SIZE_X = 6
 SIZE_Y = 6
 SNAKES_LENGTH = 3
-SQUARE_SIZE = 40
+SQUARE_SIZE = 80
 PADDING = 3
 
 start = perf_counter()
 board = GameState(SIZE_X, SIZE_Y, SNAKES_LENGTH, SQUARE_SIZE, PADDING)
 stop = perf_counter()
 
+board.reset()
+print(board.state())
+
+
 print(f"Board generated in {stop - start} seconds")
 print(f'Number of possibile states = {len(board.get_all_states())}')
+
+qActor = QLearningActor('Q actor', 0.1, 1.0, 0.9, GameState.get_possible_actions)
+qActor.load('QLearningSIZE_X=6SIZE_Y=6SNAKES_LENGTH=3N_TRAINING_GAMES=10000000')
+qActor.turn_off_learning()
 
 start = perf_counter()
 policyActor = PolicyIterationActor('Player policy', board, f'policy{SIZE_X=}{SIZE_Y=}{SNAKES_LENGTH=}')
@@ -33,7 +41,7 @@ randomActor = RandomSafeActor('Random actor', 1)
 
 print(f"Policy calculated in {stop - start} seconds")
 
-actors = [policyActor,
+actors = [qActor,
           randomActor]
 
 # board.add_player(SIZE_X // 4, 0)
@@ -68,7 +76,9 @@ def update(dt):
             return
     if start:
         for i, actor in enumerate(actors):
-            board.move(actor.choose_action(board.state()), i)
+            if board.move(actor.choose_action(board.state()), i):
+                print(f'\rActor {actor.name} lost', end='')
+                break
 
 
 @window.event
