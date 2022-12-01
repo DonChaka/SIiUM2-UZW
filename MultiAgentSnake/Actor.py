@@ -1,12 +1,17 @@
+from __future__ import annotations
+
+import copy
 import random
 import time
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from collections import defaultdict
+from typing import Callable
 import numpy as np
+from numpy.random import normal
 from pyglet.window import key
-from game import Point
-
+from game import Point, Snake, GameState
+from sortedcontainers import SortedList
 from pyglet.window.key import KeyStateHandler
 
 from pickle import dump, load
@@ -25,7 +30,7 @@ class Actor(ABC):
         return self.name
 
     @abstractmethod
-    def choose_action(self, game_state: list) -> str:
+    def choose_action(self, state: list) -> str:
         pass
 
 
@@ -35,7 +40,7 @@ class ArrowKeyboardActor(Actor):
         self.last_action = 'up'
         self.key_state_handler = key_state_handler
 
-    def choose_action(self, game_state: list) -> str:
+    def choose_action(self, state: list) -> str:
         if self.key_state_handler[key.LEFT]:
             self.last_action = 'left'
         elif self.key_state_handler[key.RIGHT]:
@@ -63,7 +68,7 @@ class WSADKeyboardActor(Actor):
         self.last_action = 'up'
         self.key_state_handler = key_state_handler
 
-    def choose_action(self, game_state: list) -> str:
+    def choose_action(self, state: list) -> str:
         if self.key_state_handler[key.A]:
             self.last_action = 'left'
         elif self.key_state_handler[key.D]:
@@ -147,8 +152,8 @@ class PolicyIterationActor(Actor):
 
         return policy, V
 
-    def choose_action(self, game_state: list) -> str:
-        return self.policy[str(game_state)]
+    def choose_action(self, state: list) -> str:
+        return self.policy[str(state)]
 
 
 def defValue():
@@ -210,6 +215,226 @@ class QLearningActor(Actor):
             return None
 
         scores = [self.get_qvalue(state, action) for action in possible_actions]
+        bestScore = max(scores)
+        bestIndices = [index for index in range(len(scores)) if scores[index] == bestScore]
+        chosenIndex = random.choice(bestIndices)  # Pick randomly among the best
+
+        return possible_actions[chosenIndex]
+
+    def choose_action(self, state):
+        possible_actions = self.get_legal_actions(state)
+        state = str(state)
+
+        if len(possible_actions) == 0:
+            return None
+
+        epsilon = self.epsilon
+
+        if random.random() < epsilon:
+            chosen_action = random.choice(possible_actions)
+        else:
+            chosen_action = self.get_best_action(state)
+
+        return chosen_action
+
+    def turn_off_learning(self):
+        self.min_eps = 0
+        self.epsilon = 0
+        self.alpha = 0
+
+
+
+
+
+class Node:
+    def __init__(self, state, parent, action, action_space, game, terminal, c=0.1, n_sims=25):
+        self.state: list = state
+        self.parent = parent
+        self.action = action
+        self.children: list[Node] = []
+        self.n_visited = 0
+        self.actions_left = action_space()
+        self.action_space = action_space
+        self.game: GameState = game
+        self.results = {-1: 0, 0: 0, 1: 0}
+        self.terminal = terminal
+        self.c = c
+        self.ucb = 0
+        self.n_sims = n_sims
+
+    def expand_node(self):
+        action = self.actions_left.pop()
+        gameState = self.game.obj_from_state(self.state)
+        _states = gameState.get_next_states(self.state, action)
+        for _state in _states:
+            terminal = (self.state[3][0] == _state[3][0]) or (self.state[3][1] == _state[3][1])
+            self.children.append(Node(_state, self, action, self.action_space, self.game, terminal))
+        return self.children
+
+    def val(self) -> int:
+        return self.results[1] - self.results[-1] - self.results[0]
+
+    def roll_out(self) -> int:
+        state = self.state
+        terminal = False
+        t1, t2 = 0, 0
+
+        while not terminal:
+            self.game.set_state(state)
+            t1 = self.game.move(np.random.choice(self.action_space()), 0)
+            t2 = self.game.move(np.random.choice(self.action_space()), 1)
+            terminal = t1 or t2
+            state = self.game.state()
+
+        return t2 - t1
+
+    def backward(self, result) -> None:
+        self.n_visited += 1.
+        self.results[result] += 1.
+        self.ucb = (self.val() / self.n_visited) + self.c * np.sqrt(np.log(self.n_visited) / self.n_visited)
+        if self.parent:
+            self.parent.backward(result)
+
+    def best_child(self) -> Node:
+        return max(self.children, key=lambda x: x.ucb)
+
+    def expand_tree(self) -> Node:
+        node = self
+        while not node.terminal:
+            if len(node.actions_left):
+                children = node.expand_node()
+                return np.random.choice(children)
+            node = node.best_child()
+        return node
+
+    def choose_action(self, state) -> Node:
+        for i in range(self.n_sims):
+            self.game.set_state(state)
+            node = self.expand_tree()
+            result = node.roll_out()
+            node.backward(result)
+
+        return self.best_child()
+
+    def reset(self, state):
+        self.state: list = state
+        self.game.set_state(state)
+        self.parent = None
+        self.action = None
+        self.children: list[Node] = []
+        self.n_visited = 0
+        self.actions_left = self.action_space()
+        self.results = {-1: 0, 0: 0, 1: 0}
+        self.terminal = False
+        self.ucb = 0
+
+
+class MCTSActor(Actor):
+    def __init__(self, name, action_space, game, c=0.1, n_sims=100):
+        super().__init__(name)
+        self.game = copy.deepcopy(game)
+        self.root = Node(None, None, None, action_space, self.game, False, c, n_sims)
+
+    def reset(self, state) -> None:
+        self.root.reset(state)
+
+    def choose_action(self, state: list) -> str:
+        chosen = self.root.choose_action(state)
+        return chosen.action
+
+    def update(self, _state) -> None:
+        for child in self.root.children:
+            if child.state == _state:
+                self.root = child
+                self.root.parent = None
+                return
+
+        raise KeyError(f'State {_state} not found in children of root')
+
+
+def state2feats(state, action):
+    directions = {
+        'down': Point(0, 1),
+        'up': Point(0, -1),
+        'left': Point(-1, 0),
+        'right': Point(1, 0),
+    }
+
+    x_size = state[0]
+    y_size = state[1]
+    apple = Point(state[2][0], state[2][0])
+    me = Snake(state[3][0][0][0], state[3][0][0][1], body=state[3][0][1:])
+    other = Snake(state[3][1][0][0], state[3][1][0][1], body=state[3][1][1:])
+    target = me.head + directions[action]
+
+    if target.out_of_bounds(x_size, y_size) or me.collides_with_point(target) or other.collides_with_point(target):
+        return np.array([float(0)] * 4)
+
+    ret = [apple.manhattanDistance(target), other.head.manhattanDistance(target)]
+
+    for b in other.body:
+        ret.append(b.manhattanDistance(target))
+
+    return ret
+
+
+class StateValueApproxActor(Actor):
+    def __init__(self, name, n_weights, features_function: Callable, get_legal_actions: Callable, alpha: float = 0.1,
+                 epsilon: float = 1, discount: float = 0.9, min_eps=0.1):
+        super().__init__(name)
+        self.get_legal_actions = get_legal_actions
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.discount = discount
+        self.min_eps = min_eps
+        self.weights = normal(loc=1, scale=.15, size=n_weights)
+        self.features_function = features_function
+
+    def q(self, state, action):
+        return np.dot(self.weights, self.features_function(state, action))
+
+    def get_value(self, state):
+        possible_actions = self.get_legal_actions(state)
+
+        if len(possible_actions) == 0:
+            return 0.0
+
+        return max([self.q(state, action) for action in possible_actions])
+
+    def save(self, path):
+        with open(path, 'wb') as fp:
+            dump([
+                self.get_legal_actions,
+                self.weights,
+                self.features_function,
+            ], fp)
+
+    def load(self, path):
+        with open(path, 'rb') as fp:
+            payload = load(fp)
+            self.get_legal_actions = payload[0]
+            self.weights = payload[1]
+            self.features_function = payload[2]
+
+    def update(self, state, action, reward, _state):
+        gamma = self.discount
+        lr = self.alpha
+
+        delta = (reward + gamma * self.q(_state, self.get_best_action(_state))) - self.q(state, action)
+        self.weights += lr * delta * self.features_function(state, action)
+        j = ((reward + gamma * self.q(_state, self.get_best_action(_state))) - self.q(state, action)) ** 2
+
+        self.epsilon -= 0.000001
+        self.epsilon = max(self.epsilon, self.min_eps)
+        return j
+
+    def get_best_action(self, state):
+        possible_actions = self.get_legal_actions(state)
+
+        if len(possible_actions) == 0:
+            return None
+
+        scores = [self.q(state, action) for action in possible_actions]
         bestScore = max(scores)
         bestIndices = [index for index in range(len(scores)) if scores[index] == bestScore]
         chosenIndex = random.choice(bestIndices)  # Pick randomly among the best

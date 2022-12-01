@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import random
 from itertools import product
 from random import randint
@@ -11,6 +12,7 @@ import numpy as np
 from numpy import ndarray
 
 from pyglet.window import Window
+
 
 # from Actor import Actor
 
@@ -54,6 +56,9 @@ class Point:
 
     def serialize(self) -> list:
         return [self.x, self.y]
+
+    def manhattanDistance(self, other: Point) -> float:
+        return abs(self.x - other.x) + abs(self.y - other.y)
 
 
 class Snake:
@@ -107,6 +112,7 @@ class GameState:
     __game_states_dir = 'gamestates'
     __apple_value = 10
     __death_value = 100
+    __all_states = None
 
     def __init__(self, x_size: int = 6, y_size: int = 6, snake_length: int = 3, cell_size: int = 40, padding: int = 5):
         self.x_size = x_size
@@ -137,6 +143,28 @@ class GameState:
 
         for i, snake in enumerate(state_to_set[3]):
             self.snakes.append(Snake(snake[0][0], snake[0][1], self.__colors[i], snake[1:]))
+
+        return self.state()
+
+    def set_state(self, state):
+        self.snakes: list[Snake] = []
+        self.dead_snakes: list[int] = []
+        self.apple: Point = Point(state[2][0], state[2][1])
+
+        for i, snake in enumerate(state[3]):
+            self.snakes.append(Snake(snake[0][0], snake[0][1], self.__colors[i], snake[1:]))
+
+    def obj_from_state(self, state):
+        new: GameState = copy.deepcopy(self)
+
+        new.snakes: list[Snake] = []
+        new.dead_snakes: list[int] = []
+        new.apple: Point = Point(state[2][0], state[2][1])
+
+        for i, snake in enumerate(state[3]):
+            new.snakes.append(Snake(snake[0][0], snake[0][1], self.__colors[i], snake[1:]))
+
+        return new
 
     def add_player(self, x: int, y: int, body: Optional[ndarray]) -> NoReturn:
         color = (randint(0, 255), randint(0, 255), randint(0, 255)) if self.snakes else (0, 0, 255)
@@ -171,7 +199,7 @@ class GameState:
 
     @staticmethod
     def get_possible_actions(state=None, actor_index=0):
-        return tuple(GameState.__directions)
+        return list(GameState.__directions)
 
     def get_reward(self, state, action, _state):
         apple = state[2]
@@ -195,7 +223,8 @@ class GameState:
         actor_snake = state[3][0].copy()
         other_snake = state[3][1].copy()
         target: Point = self.__directions[action] + actor_snake[0]
-        if not (target.out_of_bounds(state[0], state[1]) or target.serialize() in other_snake or target.serialize() in actor_snake):
+        if not (target.out_of_bounds(state[0], state[
+            1]) or target.serialize() in other_snake or target.serialize() in actor_snake):
             actor_snake.insert(0, target.serialize())
             actor_snake.pop()
 
@@ -203,7 +232,8 @@ class GameState:
             temp_snake = other_snake.copy()
             target = self.__directions[_action] + temp_snake[0]
 
-            if not (target.out_of_bounds(state[0], state[1]) or target.serialize() in actor_snake or target.serialize() in other_snake):
+            if not (target.out_of_bounds(state[0], state[
+                1]) or target.serialize() in actor_snake or target.serialize() in other_snake):
                 temp_snake.insert(0, target.serialize())
                 temp_snake.pop()
 
@@ -314,7 +344,6 @@ class GameState:
                       self._cell_size - 2 * self._padding,
                       color=(0, 255, 0), batch=batch))
 
-
 # class Game:
 #     def __init__(self, x_size: int, y_size: int, snake_length, cell_size: int = 40, padding: int = 5,
 #                  window: Window = None):
@@ -335,7 +364,7 @@ class GameState:
 #     def update(self, dt):
 #         for i, actor in enumerate(self.actors):
 #             self._state.move(actor.choose_action(self._state.state()), i)
-
+#
 #
 # SIZE_X = 7
 # SIZE_Y = 7
@@ -347,7 +376,7 @@ class GameState:
 # board = GameState(SIZE_X, SIZE_Y, SNAKES_LENGTH, SQUARE_SIZE, PADDING)
 # stop = perf_counter()
 # print(f'Generated in {stop - start}s')
-
+#
 # example = all_states[215790]
 # start = perf_counter()
 # _states = board.get_next_states(example, 'right')
