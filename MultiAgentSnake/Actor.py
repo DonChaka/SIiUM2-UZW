@@ -10,8 +10,9 @@ from typing import Callable
 import numpy as np
 from numpy.random import normal
 from pyglet.window import key
+from tqdm import tqdm
+
 from game import Point, Snake, GameState
-from sortedcontainers import SortedList
 from pyglet.window.key import KeyStateHandler
 
 from pickle import dump, load
@@ -243,20 +244,25 @@ class QLearningActor(Actor):
         self.alpha = 0
 
 
-
-
-
 class Node:
+    __directions = {
+        'down': Point(0, 1),
+        'up': Point(0, -1),
+        'left': Point(-1, 0),
+        'right': Point(1, 0),
+    }
+
     def __init__(self, state, parent, action, action_space, game, terminal, c=0.1, n_sims=25):
         self.state: list = state
         self.parent = parent
         self.action = action
         self.children: list[Node] = []
+        self.unexpanded_children: list[Node] = []
         self.n_visited = 0
-        self.actions_left = action_space()
+        self.actions_left = action_space() if state is None else self.safe_actions(state)
         self.action_space = action_space
         self.game: GameState = game
-        self.results = {-1: 0, 0: 0, 1: 0}
+        self.results = {0: 0, 1: 0}
         self.terminal = terminal
         self.c = c
         self.ucb = 0
@@ -268,25 +274,37 @@ class Node:
         _states = gameState.get_next_states(self.state, action)
         for _state in _states:
             terminal = (self.state[3][0] == _state[3][0]) or (self.state[3][1] == _state[3][1])
-            self.children.append(Node(_state, self, action, self.action_space, self.game, terminal))
-        return self.children
+            self.unexpanded_children.append(
+                Node(_state, self, action, self.action_space, self.game, terminal, self.c, self.n_sims))
+        return self.unexpanded_children
 
-    def val(self) -> int:
-        return self.results[1] - self.results[-1] - self.results[0]
+    def val(self) -> float:
+        return (self.results[1] - self.results[0]) / self.n_visited
+
+    def safe_actions(self, state):
+        ret = []
+        x_size = state[0]
+        y_size = state[1]
+        me = Snake(state[3][0][0][0], state[3][0][0][1], body=state[3][0][1:])
+
+        for action, direction in self.__directions.items():
+            target = me.head + direction
+            if not (target.out_of_bounds(x_size, y_size) or me.collides_with_point(target)):
+                ret.append(action)
+
+        return ret
 
     def roll_out(self) -> int:
-        state = self.state
         terminal = False
         t1, t2 = 0, 0
 
+        self.game.set_state(self.state)
         while not terminal:
-            self.game.set_state(state)
-            t1 = self.game.move(np.random.choice(self.action_space()), 0)
+            t1 = self.game.move(np.random.choice(self.safe_actions(self.game.state())), 0)
             t2 = self.game.move(np.random.choice(self.action_space()), 1)
             terminal = t1 or t2
-            state = self.game.state()
 
-        return t2 - t1
+        return 1 - t1
 
     def backward(self, result) -> None:
         self.n_visited += 1.
@@ -301,14 +319,22 @@ class Node:
     def expand_tree(self) -> Node:
         node = self
         while not node.terminal:
-            if len(node.actions_left):
-                children = node.expand_node()
-                return np.random.choice(children)
-            node = node.best_child()
+            if not len(node.unexpanded_children):
+                if len(node.actions_left):
+                    children = node.expand_node()
+                    return np.random.choice(children)
+                if node.n_visited <= len(self.children) * 1.25:
+                    return node.best_child()
+                node = node.best_child()
+            else:
+                _node = np.random.choice(node.unexpanded_children)
+                node.children.append(_node)
+                node.unexpanded_children.remove(_node)
+                return _node
         return node
 
     def choose_action(self, state) -> Node:
-        for i in range(self.n_sims):
+        for _ in tqdm(range(self.n_sims), disable=True):
             self.game.set_state(state)
             node = self.expand_tree()
             result = node.roll_out()
@@ -324,7 +350,7 @@ class Node:
         self.children: list[Node] = []
         self.n_visited = 0
         self.actions_left = self.action_space()
-        self.results = {-1: 0, 0: 0, 1: 0}
+        self.results = {0: 0, 1: 0}
         self.terminal = False
         self.ucb = 0
 
@@ -344,6 +370,12 @@ class MCTSActor(Actor):
 
     def update(self, _state) -> None:
         for child in self.root.children:
+            if child.state == _state:
+                self.root = child
+                self.root.parent = None
+                return
+
+        for child in self.root.unexpanded_children:
             if child.state == _state:
                 self.root = child
                 self.root.parent = None
@@ -387,7 +419,7 @@ class StateValueApproxActor(Actor):
         self.epsilon = epsilon
         self.discount = discount
         self.min_eps = min_eps
-        self.weights = normal(loc=1, scale=.15, size=n_weights)
+        self.weights = normal(loc=0, scale=.5, size=n_weights)
         self.features_function = features_function
 
     def q(self, state, action):
@@ -443,7 +475,6 @@ class StateValueApproxActor(Actor):
 
     def choose_action(self, state):
         possible_actions = self.get_legal_actions(state)
-        state = str(state)
 
         if len(possible_actions) == 0:
             return None
@@ -487,7 +518,7 @@ class RandomSafeActor(Actor):
 
             possible.append(actin)
 
-        if len(possible):
-            return random.choice(possible)
+        # if len(possible):
+        #     return random.choice(possible)
 
         return random.choice(list(self.__directions.keys()))

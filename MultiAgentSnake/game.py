@@ -127,15 +127,15 @@ class GameState:
         self._padding = padding
         self._garbage = []
 
-        self.__all_states = self._generate_all_possible_states(snake_length)
+        GameState.__all_states = self._generate_all_possible_states(snake_length)
         self.reset()
 
     def isFinished(self):
         return len(self.dead_snakes)
 
     def reset(self):
-        index = randint(0, len(self.__all_states) - 1)
-        state_to_set = self.__all_states[index]
+        index = randint(0, len(GameState.__all_states) - 1)
+        state_to_set = GameState.__all_states[index]
 
         self.snakes: list[Snake] = []
         self.dead_snakes: list[int] = []
@@ -192,7 +192,7 @@ class GameState:
         return 0
 
     def get_all_states(self) -> list:
-        return self.__all_states
+        return GameState.__all_states
 
     def is_terminal(self):
         return len(self.dead_snakes)
@@ -343,42 +343,3 @@ class GameState:
                       self._cell_size - 2 * self._padding,
                       self._cell_size - 2 * self._padding,
                       color=(0, 255, 0), batch=batch))
-
-# class Game:
-#     def __init__(self, x_size: int, y_size: int, snake_length, cell_size: int = 40, padding: int = 5,
-#                  window: Window = None):
-#         self._state = GameState(x_size, y_size, snake_length, cell_size, padding)
-#         self.window = window
-#         self.actors: list[Actor] = []
-#
-#     def add_player(self, x: int, y: int, body, actor: Actor) -> NoReturn:
-#         self._state.add_player(x, y, body)
-#         self.actors.append(actor)
-#
-#     @Window.event
-#     def on_draw(self):
-#         self.window.clear()
-#         batch = Batch()
-#         self._state.draw(batch)
-#
-#     def update(self, dt):
-#         for i, actor in enumerate(self.actors):
-#             self._state.move(actor.choose_action(self._state.state()), i)
-#
-#
-# SIZE_X = 7
-# SIZE_Y = 7
-# SNAKES_LENGTH = 3
-# SQUARE_SIZE = 40
-# PADDING = 3
-#
-# start = perf_counter()
-# board = GameState(SIZE_X, SIZE_Y, SNAKES_LENGTH, SQUARE_SIZE, PADDING)
-# stop = perf_counter()
-# print(f'Generated in {stop - start}s')
-#
-# example = all_states[215790]
-# start = perf_counter()
-# _states = board.get_next_states(example, 'right')
-# stop = perf_counter()
-# print(f'Generated in {stop - start}s')

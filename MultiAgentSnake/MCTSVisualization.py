@@ -5,17 +5,18 @@ from Actor import RandomSafeActor, MCTSActor
 from game import GameState
 import copy
 
-SIZE_X = 5
-SIZE_Y = 5
+SIZE_X = 6
+SIZE_Y = 6
 SNAKES_LENGTH = 3
-SQUARE_SIZE = 40
+SQUARE_SIZE = 80
 PADDING = 3
 N_TEST_GAMES = 10_000
 print('Generating board')
 board = GameState(SIZE_X, SIZE_Y, SNAKES_LENGTH, SQUARE_SIZE, PADDING)
 print('Board generated')
 
-mctsActor = MCTSActor('MCTS actor', GameState.get_possible_actions, copy.deepcopy(board), n_sims=20)
+mctsActor = MCTSActor('MCTS actor', GameState.get_possible_actions, copy.deepcopy(board), n_sims=10000)
+mctsActor.reset(board.state())
 randomActor = RandomSafeActor('Random actor', 1)
 
 counters = [0, 0]
@@ -47,19 +48,20 @@ def update(dt):
     if board.isFinished():
         timer += dt
         if timer >= 1:
-            board.reset()
-            mctsActor.reset(board.state())
+            state = board.reset()
+            mctsActor.reset(state)
             timer = 0
         else:
             return
     if start:
         for i, actor in enumerate(actors):
-            if board.move(actor.choose_action(board.state()), i):
+            state = board.state()
+            if board.move(actor.choose_action(state), i):
                 print(f'\rActor {actor.name} lost', end='')
                 break
-            _state = board.state()
-            mctsActor.update(_state)
-
+            if not i:
+                _state = board.state()
+                mctsActor.update(_state)
 
 
 @window.event
