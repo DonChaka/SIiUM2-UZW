@@ -29,16 +29,18 @@ def state2feats(state, action):
     target = me.head + directions[action]
     ret = []
 
-    if target in me.body:
-        ret.append(-1000)
+    if target in me.body or other.collides_with_point(target) or target.out_of_bounds(x_size, y_size):
+        ret.append(-1)
     else:
-        ret.append(0)
+        ret.append(1)
 
     ret.append(norm(apple.manhattanDistance(target)))
-    ret.append(norm(other.head.manhattanDistance(target)))
 
-    for b in me.body:
-        ret.append(norm(b.manhattanDistance(other.head)))
+    # ret.append(norm(apple.manhattanDistance(target)))
+    # ret.append(norm(other.head.manhattanDistance(target)))
+    #
+    # for b in me.body:
+    #     ret.append(norm(b.manhattanDistance(other.head)))
 
     return plt.array(ret)
 
@@ -53,7 +55,7 @@ N_TEST_GAMES = 1000
 
 board = GameState(SIZE_X, SIZE_Y, SNAKES_LENGTH, SQUARE_SIZE, PADDING)
 
-stateValueApproxActor = StateValueApproxActor('State value approximation agent', 4, state2feats, board.get_possible_actions)
+stateValueApproxActor = StateValueApproxActor('State value approximation agent', 2, state2feats, board.get_possible_actions)
 randomActor = RandomSafeActor('Random actor', 1)
 
 counters = [0, 0]
@@ -73,7 +75,8 @@ for _ in tqdm(range(N_TRAINING_GAMES), desc='Training loop'):
         state = _state
 
 stateValueApproxActor.turn_off_learning()
-print(f'QActor won {N_TRAINING_GAMES - counters[0]}/{N_TRAINING_GAMES} => {(N_TRAINING_GAMES - counters[0]) / N_TRAINING_GAMES:.2f}% of training games')
+print(f'QActor won {N_TRAINING_GAMES - counters[0]}/{N_TRAINING_GAMES} => '
+      f'{((N_TRAINING_GAMES - counters[0]) / N_TRAINING_GAMES) * 100:.2f}% of training games')
 
 
 counters = [0, 0]
@@ -87,4 +90,5 @@ for _ in tqdm(range(N_TEST_GAMES), desc='Test loop'):
         reward = board.get_reward(state, action, _state)
         state = _state
 
-print(f'QActor won {N_TEST_GAMES - counters[0]}/{N_TEST_GAMES} => {(N_TEST_GAMES - counters[0]) / N_TEST_GAMES:.2f}% of test games')
+print(f'QActor won {N_TEST_GAMES - counters[0]}/{N_TEST_GAMES} => '
+      f'{((N_TEST_GAMES - counters[0]) / N_TEST_GAMES) * 100:.2f}% of test games')
