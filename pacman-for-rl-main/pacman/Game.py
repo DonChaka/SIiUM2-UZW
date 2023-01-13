@@ -193,8 +193,8 @@ class Game:
 
         pygame.display.flip()
 
-    def run(self):
-        while True:
+    def run(self, n_iter=1000):
+        for _ in range(n_iter):
             if self.display_mode_on:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
