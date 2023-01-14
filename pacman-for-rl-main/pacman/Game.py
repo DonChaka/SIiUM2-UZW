@@ -11,6 +11,8 @@ from .GameState import GameState
 from copy import deepcopy
 from .Helpers import can_move_in_direction, direction_to_new_position
 
+from tqdm import tqdm
+
 BIG_POINT_VALUE = 5
 BIG_BIG_POINT_VALUE = 20
 POINT_VALUE = 1
@@ -194,7 +196,7 @@ class Game:
         pygame.display.flip()
 
     def run(self, n_iter=1000):
-        for _ in range(n_iter):
+        for _ in tqdm(range(n_iter)):
             if self.display_mode_on:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
