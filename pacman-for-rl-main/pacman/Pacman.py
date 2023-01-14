@@ -1,7 +1,7 @@
 import random
 from abc import ABC, abstractmethod
 from .Position import Position, clamp
-from typing import Dict, Callable, Optional
+from typing import Dict, Callable, Optional, TypedDict, Any
 import numpy as np
 from datetime import datetime
 from numpy import ndarray, loadtxt, savetxt
@@ -110,7 +110,12 @@ class Pacman244827(Pacman):
             self.weights = normal(loc=0, scale=.5, size=self.n_features)
         else:
             self.weights = self.__get_weights_from_file(fname=weights_fname)
-        self.decision_cache = {}
+        self.decision_cache: dict[str, Any] = {
+            'state': None,
+            'action': None,
+            'reward': None,
+            '_state': None
+        }
         self.__n_wins = 0
         self.__n_loses = 0
 
@@ -244,9 +249,10 @@ class Pacman244827(Pacman):
         self.__n_loses = 0
 
     def save(self) -> None:
-        dt_string = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
-        fname = f'{self.name}_winrate={self.get_winrate():.2f}_{dt_string}.txt'
-        savetxt(fname=fname, delimiter=',')
+        dt_string = datetime.now().strftime("%d-%m-%Y_%H;%M;%S")
+        winrate_str = str(int(self.get_winrate()))
+        fname = f'{self.name}_winrate_{winrate_str}_{dt_string}.txt'
+        savetxt(fname=fname, X=self.weights, delimiter=',')
 
 
 """
