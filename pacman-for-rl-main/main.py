@@ -40,7 +40,20 @@ board_big = ["wwwwwwwwwwwwwwwwwwwwwwwwwwww",
              "wp************************pw",
              "wwwwwwwwwwwwwwwwwwwwwwwwwwww"]
 
-while True:
-    game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
-                [Pacman244827(), RandomPacman(), RandomPacman(), RandomPacman()], True)
-    print(game.run())
+
+agent = Pacman244827()
+
+game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
+            [Pacman244827(), RandomPacman(), RandomPacman(), RandomPacman()], False)
+game.run(n_iter=10)
+
+print(f'agent train winrate: {agent.get_winrate():.2f}')
+agent.reset_winrate()
+
+game.run(n_iter=10)
+print(f'agent test winrate: {agent.get_winrate():.2f}')
+agent.save()
+
+
+
+
