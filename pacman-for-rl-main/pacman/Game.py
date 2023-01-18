@@ -11,7 +11,6 @@ from .GameState import GameState
 from copy import deepcopy
 from .Helpers import can_move_in_direction, direction_to_new_position
 
-from tqdm import tqdm
 
 BIG_POINT_VALUE = 5
 BIG_BIG_POINT_VALUE = 20
@@ -195,8 +194,8 @@ class Game:
 
         pygame.display.flip()
 
-    def run(self, n_iter=1000):
-        for _ in tqdm(range(n_iter)):
+    def run(self):
+        while True:
             if self.display_mode_on:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -208,13 +207,13 @@ class Game:
                 pygame.time.delay(self.delay)
 
             if not self.players:  # bye
-                print("you lost")
+                # print("you lost")
                 return self.final_scores
 
             if not self.points and not self.big_points:
                 for player in self.players:
                     player.on_win(self.final_scores)
-                print('you won')  # congrats!
+                # print('you won')  # congrats!
                 return self.final_scores
 
             self.update_eatable_timers()

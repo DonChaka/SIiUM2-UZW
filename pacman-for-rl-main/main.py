@@ -1,6 +1,8 @@
 from pacman.Ghost import Ghosts
 from pacman.Pacman import RandomPacman, Pacman244827
 from pacman.Game import Game
+from tqdm import tqdm
+
 
 board = ["*   g",
          "gwww ",
@@ -41,17 +43,27 @@ board_big = ["wwwwwwwwwwwwwwwwwwwwwwwwwwww",
              "wwwwwwwwwwwwwwwwwwwwwwwwwwww"]
 
 
+N_TRAIN_GAMES = 750
+N_TEST_GAMES = 100
+
 agent = Pacman244827()
 
-game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
-            [Pacman244827(), RandomPacman(), RandomPacman(), RandomPacman()], False)
-game.run(n_iter=10)
+for _ in tqdm(range(N_TRAIN_GAMES)):
+    game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
+                [agent, RandomPacman(), RandomPacman(), RandomPacman()], False, delay=0)
+    game.run()
 
 print(f'agent train winrate: {agent.get_winrate():.2f}')
+print(f'agent avg score: {agent.get_avg_score():.2f}')
 agent.reset_winrate()
 
-game.run(n_iter=10)
+for _ in tqdm(range(N_TEST_GAMES)):
+    game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
+                [agent, RandomPacman(), RandomPacman(), RandomPacman()], True, delay=0)
+    game.run()
+
 print(f'agent test winrate: {agent.get_winrate():.2f}')
+print(f'agent avg score: {agent.get_avg_score():.2f}')
 agent.save()
 
 

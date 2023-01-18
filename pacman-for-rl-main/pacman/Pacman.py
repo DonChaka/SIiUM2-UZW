@@ -1,7 +1,7 @@
 import random
 from abc import ABC, abstractmethod
 from .Position import Position, clamp
-from typing import Dict, Callable, Optional, TypedDict, Any
+from typing import Dict, Callable, Optional, TypedDict, Any, Iterable
 import numpy as np
 from datetime import datetime
 from numpy import ndarray, loadtxt, savetxt
@@ -55,7 +55,7 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 6
+    __def_n_features = 9
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -93,6 +93,7 @@ class Pacman244827(Pacman):
 
         self.name = name
         self.action_space = action_space
+        self.legal_actions = list(action_space)
 
         if features_function:
             self.features_function = features_function
@@ -110,7 +111,7 @@ class Pacman244827(Pacman):
             self.weights = normal(loc=0, scale=.5, size=self.n_features)
         else:
             self.weights = self.__get_weights_from_file(fname=weights_fname)
-        self.decision_cache: dict[str, Any] = {
+        self.transition_cache: dict[str, Any] = {
             'state': None,
             'action': None,
             'reward': None,
@@ -118,6 +119,9 @@ class Pacman244827(Pacman):
         }
         self.__n_wins = 0
         self.__n_loses = 0
+        self.curr_score = 0
+        self.scores = []
+        self.idle = 0
 
     def __str__(self):
         return self.name
@@ -142,13 +146,13 @@ class Pacman244827(Pacman):
         me = state.you['position']
         target: Position = me + self.__DIRECTIONS[action]
 
-        # Am I even in the frame
-        if target in state.walls or 0 > target.x > state.board_size[0] or 0 > target.y > state.board_size[1]:
-            feats.append(1)
-        else:
-            feats.append(-1)
+        # # Am I even in the frame
+        # if target in state.walls or 0 > target.x > state.board_size[0] or 0 > target.y > state.board_size[1]:
+        #     feats.append(1)
+        # else:
+        #     feats.append(-1)
 
-        # Distance to closest ghost that could hurt us
+        # Distance to the closest ghost that could hurt us
         dists = [norm(self.__manhattanDistance(target, ghost['position'])) if not ghost['is_eatable'] else 0 for ghost
                  in state.ghosts]
         if len(dists):
@@ -156,7 +160,7 @@ class Pacman244827(Pacman):
         else:
             feats.append(0)
 
-        # Distance to closest ghost that we can hurt
+        # Distance to the closest ghost that we can hurt
         dists = [norm(self.__manhattanDistance(target, ghost['position'])) if ghost['is_eatable'] else 0 for ghost in
                  state.ghosts]
         if len(dists):
@@ -164,7 +168,7 @@ class Pacman244827(Pacman):
         else:
             feats.append(0)
 
-        # Distance to closest other pacman that could hurt us
+        # Distance to the closest other pacman that could hurt us
         dists = [norm(self.__manhattanDistance(target, other['position'])) if not other['is_eatable'] or not other[
             'is_indestructible'] else x_size + y_size for other in state.other_pacmans]
         if len(dists):
@@ -184,25 +188,44 @@ class Pacman244827(Pacman):
             feats.append(0)
             feats.append(0)
 
+        # Distance to the closest big point
+        feats.append(self.min_from_list(target, state.big_points, norm))
+
+        # distance to the closest big_big point
+        feats.append(self.min_from_list(target, state.big_big_points, norm))
+
+        # distance to the closest indestructible point
+        feats.append(self.min_from_list(target, state.indestructible_points, norm))
+
+        # distance to the closest phasing point
+        feats.append(self.min_from_list(target, state.phasing_points, norm))
+
         return np.array(feats)
+
+    def min_from_list(self, target: Position, col: Iterable, norm: Callable) -> float:
+        dists = [norm(self.__manhattanDistance(target, other)) for other in col]
+        if len(dists):
+            return min(dists)
+        return 0
 
     def __q(self, state: GameState, action: Direction) -> float:
         return float(np.dot(self.weights, self.features_function(state, action)))
 
-    def __update(self, state: GameState, action: Direction, reward: int, _state: GameState) -> None:
+    def __update(self, state: GameState, action: Direction, reward: int, _state: GameState, terminal: int = 1) -> None:
         gamma = self.gamma
         lr = self.alpha
-        if None in self.decision_cache.values():
+        if None in self.transition_cache.values():
             return
 
-        delta = (reward + gamma * self.__q(_state, self.get_best_action(_state))) - self.__q(state, action)
+        delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
         self.weights += lr * delta * self.features_function(state, action)
 
         self.epsilon -= self.eps_dec
+        self.epsilon += self.eps_dec * self.idle
         self.epsilon = max(self.epsilon, self.eps_min)
 
     def get_best_action(self, state: GameState) -> Direction:
-        possible_actions = self.action_space
+        possible_actions = self.legal_actions
 
         scores = [self.__q(state, action) for action in possible_actions]
         bestScore = max(scores)
@@ -212,18 +235,26 @@ class Pacman244827(Pacman):
         return possible_actions[chosenIndex]
 
     def make_move(self, state: GameState, invalid_move: bool = False) -> Direction:
-        epsilon = self.epsilon
-        self.decision_cache['_state'] = state
+        if invalid_move:
+            self.legal_actions.remove(self.transition_cache['action'])
 
-        self.__update(**self.decision_cache)
+        epsilon = self.epsilon
+
+        if not invalid_move:
+            self.transition_cache['_state'] = state
+
+        self.__update(**self.transition_cache)
 
         if random.random() < epsilon:
-            chosen_action = random.choice(self.action_space)
+            chosen_action = random.choice(self.legal_actions)
         else:
             chosen_action = self.get_best_action(state)
 
-        self.decision_cache['action'] = chosen_action
-        self.decision_cache['state'] = state
+        if not invalid_move:
+            self.transition_cache['state'] = state
+            self.legal_actions = list(self.action_space)
+
+        self.transition_cache['action'] = chosen_action
 
         return chosen_action
 
@@ -233,25 +264,47 @@ class Pacman244827(Pacman):
         self.alpha = 0
 
     def give_points(self, points: int) -> None:
-        self.decision_cache['reward'] = points
+        if not points:
+            self.idle += 1
+        else:
+            self.idle = max(self.idle - 5, 0)
+        self.curr_score += points
+        self.transition_cache['reward'] = points
+
+    def on_game_end(self) -> None:
+        self.scores.append(self.curr_score)
+        self.curr_score = 0
+        self.idle = 0
 
     def on_win(self, result: Dict["Pacman", int]) -> None:
+        self.on_game_end()
         self.__n_wins += 1
+        self.transition_cache['reward'] = 100
+        self.__update(**self.transition_cache, terminal=0)
 
     def on_death(self) -> None:
+        self.on_game_end()
         self.__n_loses += 1
+        self.transition_cache['reward'] = -100
+        self.__update(**self.transition_cache, terminal=0)
 
     def get_winrate(self) -> float:
         return self.__n_wins / (self.__n_loses + self.__n_wins) * 100 if self.__n_wins + self.__n_loses else 0.0
 
+    def get_avg_score(self):
+        return np.average(self.scores)
+
     def reset_winrate(self) -> None:
         self.__n_wins = 0
         self.__n_loses = 0
+        self.scores = []
+        self.curr_score = 0
 
     def save(self) -> None:
         dt_string = datetime.now().strftime("%d-%m-%Y_%H;%M;%S")
         winrate_str = str(int(self.get_winrate()))
-        fname = f'{self.name}_winrate_{winrate_str}_{dt_string}.txt'
+        # fname = f'{self.name}_winrate_{winrate_str}_{dt_string}.txt'
+        fname = f'{self.name}'
         savetxt(fname=fname, X=self.weights, delimiter=',')
 
 
