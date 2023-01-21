@@ -105,7 +105,7 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 13
+    __def_n_features = 15
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -200,66 +200,78 @@ class Pacman244827(Pacman):
         target: Position = me + self.__DIRECTIONS[action]
 
         # # Am I even in the frame
-        if target in state.walls or 0 > target.x > state.board_size[0] or 0 > target.y > state.board_size[1]:
-            feats.append(1)
-        else:
-            feats.append(-1)
+        # if target in state.walls or 0 > target.x > state.board_size[0] or 0 > target.y > state.board_size[1]:
+        #     feats.append(1)
+        # else:
+        #     feats.append(-1)
 
-        # Distance to the closest ghost that could hurt us
-        dists = [norm(self.__manhattanDistance(target, ghost['position'])) if not ghost['is_eatable'] else 0 for ghost
-                 in state.ghosts]
-        if len(dists):
-            feats.append((min(dists)))
-        else:
-            feats.append(1)
+        # # Distance to the closest ghost that could hurt us
+        # dists = [norm(self.__manhattanDistance(target, ghost['position'])) if not ghost['is_eatable'] else 0 for ghost
+        #          in state.ghosts]
+        # if len(dists):
+        #     feats.append((min(dists)))
+        # else:
+        #     feats.append(1)
 
-        # Distance to the closest ghost that we can hurt
-        dists = [norm(self.__manhattanDistance(target, ghost['position'])) if ghost['is_eatable'] else 0 for ghost in
-                 state.ghosts]
-        if len(dists):
-            feats.append((min(dists)))
-        else:
-            feats.append(1)
+        # # Distance to the closest ghost that we can hurt
+        # dists = [norm(self.__manhattanDistance(target, ghost['position'])) if ghost['is_eatable'] else 0 for ghost in
+        #          state.ghosts]
+        # if len(dists):
+        #     feats.append((min(dists)))
+        # else:
+        #     feats.append(1)
 
-        # Distance to the closest other pacman that could hurt us
-        dists = [norm(self.__manhattanDistance(target, other['position'])) if not other['is_eatable'] or not other[
-            'is_indestructible'] else x_size + y_size for other in state.other_pacmans]
-        if len(dists):
-            feats.append((min(dists)))
-        else:
-            feats.append(1)
+        # # Distance to the closest other pacman that could hurt us
+        # dists = [norm(self.__manhattanDistance(target, other['position'])) if not other['is_eatable'] or not other[
+        #     'is_indestructible'] else x_size + y_size for other in state.other_pacmans]
+        # if len(dists):
+        #     feats.append((min(dists)))
+        # else:
+        #     feats.append(1)
 
         # Distance to centroid of available points and closest point
-        if len(state.points):
-            xs = [point.x for point in state.points]
-            ys = [point.y for point in state.points]
-            centroid = Position(np.average(xs), np.average(ys))
-            feats.append(norm(self.__manhattanDistance(target, centroid)))
-            dists = [norm(self.__manhattanDistance(target, point)) for point in state.points]
-            feats.append(min(dists))
-        else:
-            feats.append(1)
-            feats.append(1)
+        # if len(state.points):
+        #     xs = [point.x for point in state.points]
+        #     ys = [point.y for point in state.points]
+        #     centroid = Position(np.average(xs), np.average(ys))
+        #     feats.append(norm(self.__manhattanDistance(target, centroid)))
+        #     dists = [norm(self.__manhattanDistance(target, point)) for point in state.points]
+        #     feats.append(min(dists))
+        # else:
+        #     # feats.append(1)
+        #     feats.append(1)
 
-        for n in range(1, 4):
-            count = 0
-            for x, y in product(range(-n, n+1, 1), range(-n, n+1, 1)):
-                sus = Position(x, y) + target
-                if 0 > sus.x > x_size or 0 > sus.y > x_size:
-                    continue
-                if sus in state.points:
-                    count += 1
-            feats.append(__map(count, 0, n*2+1, -1, 1))
-
-        for n in range(1, 4):
-            count = 0
+        radius = 3
+        for n in range(1, radius + 1):
+            n_scared_ghosts = 0
+            n_angry_ghosts = 0
+            n_other_pacmans = 0
             for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
                 sus = Position(x, y) + target
                 if 0 > sus.x > x_size or 0 > sus.y > x_size:
                     continue
-                if sus in [ghost['position'] for ghost in state.ghosts]:
-                    count += 1
-            feats.append(__map(count, 0, n * 2 + 1, -1, 1))
+                if sus in [ghost['position'] for ghost in state.ghosts if ghost['is_eatable']]:
+                    n_scared_ghosts += 1
+
+                if sus in [ghost['position'] for ghost in state.ghosts if not ghost['is_eatable']]:
+                    n_angry_ghosts += 1
+
+                if sus in [pacman['position'] for pacman in state.other_pacmans]:
+                    n_other_pacmans += 1
+
+            feats.append(__map(n_scared_ghosts, 0, n * 2 + 1, -1, 1))
+            feats.append(__map(n_angry_ghosts, 0, n * 2 + 1, -1, 1))
+            feats.append(__map(n_other_pacmans, 0, n * 2 + 1, -1, 1))
+
+        for n in range(1, radius * 2):
+            n_points = 0
+            for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
+                sus = Position(x, y) + target
+                if 0 > sus.x > x_size or 0 > sus.y > x_size:
+                    continue
+                if sus in state.points:
+                    n_points += 1
+            feats.append(__map(n_points, 0, n * 2 + 1, -1, 1))
 
         n_norm = lambda x: __map(x, 0, x_size * y_size, 0, 1)
         feats.append(n_norm(len(state.points)))
@@ -276,7 +288,7 @@ class Pacman244827(Pacman):
         # # distance to the closest phasing point
         # feats.append(self.min_from_list(target, state.phasing_points, norm))
         #
-        # #distance to closest double points
+        # #distance to the closest double points
         # feats.append(self.min_from_list(target, state.double_points, norm))
 
         return np.array(feats)
