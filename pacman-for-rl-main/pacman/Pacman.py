@@ -1,5 +1,7 @@
 import random
 from abc import ABC, abstractmethod
+from itertools import product
+
 from .Position import Position, clamp
 from typing import Dict, Callable, Optional, TypedDict, Any, Iterable
 import numpy as np
@@ -8,6 +10,54 @@ from numpy import ndarray, loadtxt, savetxt
 from numpy.random import normal
 from .GameState import GameState
 from .Direction import Direction
+
+
+class ExtendableList(list):
+    def __setitem__(self, key, value):
+        if isinstance(key, slice):
+            if self.__len__() < key.start + 1:
+                self.extend([0] * (key.start + 1 - self.__len__()))
+            if self.__len__() < key.stop + 1:
+                self.extend([0] * (key.stop - self.__len__()))
+        else:
+            while self.__len__() < key + 1:
+                self.extend([0] * (key + 1 - self.__len__()))
+        super().__setitem__(key, value)
+
+
+class ReplayBuffer:
+    def __init__(self, mem_size):
+        self.mem_size = mem_size
+        self.mem_cntr = 0
+        self.state_memory = np.zeros(self.mem_size, dtype=np.object)
+        self.new_state_memory = np.zeros(self.mem_size, dtype=np.object)
+        self.action_memory = np.zeros(self.mem_size, dtype=np.object)
+        self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
+        self.terminal_memory = np.zeros(self.mem_size, dtype=np.bool)
+
+    def store_transition(self, state: ndarray, action: Direction, reward: float, _state: ndarray,
+                         terminal: int) -> None:
+        index = self.mem_cntr % self.mem_size
+        self.state_memory[index] = state
+        self.new_state_memory[index] = _state
+        self.action_memory[index] = action
+        self.reward_memory[index] = reward
+        self.terminal_memory[index] = terminal
+        self.mem_cntr += 1
+
+    def sample_buffer(self, batch_size: int) -> tuple:
+        max_mem = min(self.mem_cntr, self.mem_size)
+
+        batch = np.random.choice(max_mem, batch_size, replace=False)
+
+        states = self.state_memory[batch]
+        actions = self.action_memory[batch]
+        rewards = self.reward_memory[batch]
+        states_ = self.new_state_memory[batch]
+        terminal = self.terminal_memory[batch]
+
+        return states, actions, rewards, states_, terminal
+
 
 """
 A pacman is that yellow thing with a big mouth that can eat points and ghosts!
@@ -55,7 +105,7 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 9
+    __def_n_features = 13
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -73,7 +123,7 @@ class Pacman244827(Pacman):
             features_function: Callable = None,
             alpha: float = 0.1,
             epsilon: float = 1,
-            eps_dec: float = 0.0001,
+            eps_dec: float = 0.001,
             eps_min: float = 0.01,
             gamma: float = 0.9,
             weights_fname: Optional[str] = None
@@ -115,13 +165,16 @@ class Pacman244827(Pacman):
             'state': None,
             'action': None,
             'reward': None,
-            '_state': None
+            '_state': None,
+            'terminal': 0,
         }
         self.__n_wins = 0
         self.__n_loses = 0
         self.curr_score = 0
         self.scores = []
         self.idle = 0
+        self._batch_size = 1
+        self.memory = ReplayBuffer(100000)
 
     def __str__(self):
         return self.name
@@ -147,10 +200,10 @@ class Pacman244827(Pacman):
         target: Position = me + self.__DIRECTIONS[action]
 
         # # Am I even in the frame
-        # if target in state.walls or 0 > target.x > state.board_size[0] or 0 > target.y > state.board_size[1]:
-        #     feats.append(1)
-        # else:
-        #     feats.append(-1)
+        if target in state.walls or 0 > target.x > state.board_size[0] or 0 > target.y > state.board_size[1]:
+            feats.append(1)
+        else:
+            feats.append(-1)
 
         # Distance to the closest ghost that could hurt us
         dists = [norm(self.__manhattanDistance(target, ghost['position'])) if not ghost['is_eatable'] else 0 for ghost
@@ -158,7 +211,7 @@ class Pacman244827(Pacman):
         if len(dists):
             feats.append((min(dists)))
         else:
-            feats.append(0)
+            feats.append(1)
 
         # Distance to the closest ghost that we can hurt
         dists = [norm(self.__manhattanDistance(target, ghost['position'])) if ghost['is_eatable'] else 0 for ghost in
@@ -166,7 +219,7 @@ class Pacman244827(Pacman):
         if len(dists):
             feats.append((min(dists)))
         else:
-            feats.append(0)
+            feats.append(1)
 
         # Distance to the closest other pacman that could hurt us
         dists = [norm(self.__manhattanDistance(target, other['position'])) if not other['is_eatable'] or not other[
@@ -174,9 +227,9 @@ class Pacman244827(Pacman):
         if len(dists):
             feats.append((min(dists)))
         else:
-            feats.append(0)
+            feats.append(1)
 
-        # Distance to centroid of available points
+        # Distance to centroid of available points and closest point
         if len(state.points):
             xs = [point.x for point in state.points]
             ys = [point.y for point in state.points]
@@ -185,20 +238,46 @@ class Pacman244827(Pacman):
             dists = [norm(self.__manhattanDistance(target, point)) for point in state.points]
             feats.append(min(dists))
         else:
-            feats.append(0)
-            feats.append(0)
+            feats.append(1)
+            feats.append(1)
 
-        # Distance to the closest big point
-        feats.append(self.min_from_list(target, state.big_points, norm))
+        for n in range(1, 4):
+            count = 0
+            for x, y in product(range(-n, n+1, 1), range(-n, n+1, 1)):
+                sus = Position(x, y) + target
+                if 0 > sus.x > x_size or 0 > sus.y > x_size:
+                    continue
+                if sus in state.points:
+                    count += 1
+            feats.append(__map(count, 0, n*2+1, -1, 1))
 
-        # distance to the closest big_big point
-        feats.append(self.min_from_list(target, state.big_big_points, norm))
+        for n in range(1, 4):
+            count = 0
+            for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
+                sus = Position(x, y) + target
+                if 0 > sus.x > x_size or 0 > sus.y > x_size:
+                    continue
+                if sus in [ghost['position'] for ghost in state.ghosts]:
+                    count += 1
+            feats.append(__map(count, 0, n * 2 + 1, -1, 1))
 
-        # distance to the closest indestructible point
-        feats.append(self.min_from_list(target, state.indestructible_points, norm))
+        n_norm = lambda x: __map(x, 0, x_size * y_size, 0, 1)
+        feats.append(n_norm(len(state.points)))
 
-        # distance to the closest phasing point
-        feats.append(self.min_from_list(target, state.phasing_points, norm))
+        # # Distance to the closest big point
+        # feats.append(self.min_from_list(target, state.big_points, norm))
+        #
+        # # distance to the closest big_big point
+        # feats.append(self.min_from_list(target, state.big_big_points, norm))
+        #
+        # # distance to the closest indestructible point
+        # feats.append(self.min_from_list(target, state.indestructible_points, norm))
+        #
+        # # distance to the closest phasing point
+        # feats.append(self.min_from_list(target, state.phasing_points, norm))
+        #
+        # #distance to closest double points
+        # feats.append(self.min_from_list(target, state.double_points, norm))
 
         return np.array(feats)
 
@@ -211,18 +290,28 @@ class Pacman244827(Pacman):
     def __q(self, state: GameState, action: Direction) -> float:
         return float(np.dot(self.weights, self.features_function(state, action)))
 
-    def __update(self, state: GameState, action: Direction, reward: int, _state: GameState, terminal: int = 1) -> None:
-        gamma = self.gamma
-        lr = self.alpha
-        if None in self.transition_cache.values():
+    def __update(self, state, action, reward, _state, terminal) -> None:
+        if (self.memory.mem_cntr < self._batch_size) or (None in self.transition_cache.values()) or self.alpha is 0:
             return
 
-        delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
+        gamma = self.gamma
+        lr = self.alpha
+
+        # states, actions, rewards, _states, terminals = self.memory.sample_buffer(self._batch_size)
+
+        # w_update = 0
+        # for state, action, reward, _state, terminal in zip(states, actions, rewards, _states, terminals):
+        #     delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
+        # w_update += lr * delta * self.features_function(state, action)
+        # self.weights += 1/self._batch_size * w_update
+
+        delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * (1 - terminal)) - self.__q(state,
+                                                                                                              action)
         self.weights += lr * delta * self.features_function(state, action)
 
         self.epsilon -= self.eps_dec
         self.epsilon += self.eps_dec * self.idle
-        self.epsilon = max(self.epsilon, self.eps_min)
+        self.epsilon = min(max(self.epsilon, self.eps_min), 1)
 
     def get_best_action(self, state: GameState) -> Direction:
         possible_actions = self.legal_actions
@@ -238,12 +327,13 @@ class Pacman244827(Pacman):
         if invalid_move:
             self.legal_actions.remove(self.transition_cache['action'])
 
-        epsilon = self.epsilon
-
         if not invalid_move:
             self.transition_cache['_state'] = state
+        if None not in self.transition_cache.values():
+            self.memory.store_transition(**self.transition_cache)
+            self.__update(**self.transition_cache)
 
-        self.__update(**self.transition_cache)
+        epsilon = self.epsilon
 
         if random.random() < epsilon:
             chosen_action = random.choice(self.legal_actions)
@@ -259,8 +349,7 @@ class Pacman244827(Pacman):
         return chosen_action
 
     def turn_off_learning(self) -> None:
-        self.eps_min = 0
-        self.epsilon = 0
+        self.epsilon = self.eps_min
         self.alpha = 0
 
     def give_points(self, points: int) -> None:
@@ -275,18 +364,20 @@ class Pacman244827(Pacman):
         self.scores.append(self.curr_score)
         self.curr_score = 0
         self.idle = 0
+        self.transition_cache['terminal'] = 1
+        self.memory.store_transition(**self.transition_cache)
+        self.__update(**self.transition_cache)
+        self.transition_cache['terminal'] = 0
 
     def on_win(self, result: Dict["Pacman", int]) -> None:
-        self.on_game_end()
         self.__n_wins += 1
         self.transition_cache['reward'] = 100
-        self.__update(**self.transition_cache, terminal=0)
+        self.on_game_end()
 
     def on_death(self) -> None:
-        self.on_game_end()
         self.__n_loses += 1
         self.transition_cache['reward'] = -100
-        self.__update(**self.transition_cache, terminal=0)
+        self.on_game_end()
 
     def get_winrate(self) -> float:
         return self.__n_wins / (self.__n_loses + self.__n_wins) * 100 if self.__n_wins + self.__n_loses else 0.0
@@ -304,7 +395,7 @@ class Pacman244827(Pacman):
         dt_string = datetime.now().strftime("%d-%m-%Y_%H;%M;%S")
         winrate_str = str(int(self.get_winrate()))
         # fname = f'{self.name}_winrate_{winrate_str}_{dt_string}.txt'
-        fname = f'{self.name}'
+        fname = f'{self.name}.txt'
         savetxt(fname=fname, X=self.weights, delimiter=',')
 
 

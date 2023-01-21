@@ -43,28 +43,37 @@ board_big = ["wwwwwwwwwwwwwwwwwwwwwwwwwwww",
              "wwwwwwwwwwwwwwwwwwwwwwwwwwww"]
 
 
-N_TRAIN_GAMES = 750
+N_TRAIN_GAMES = 500
 N_TEST_GAMES = 100
 
 agent = Pacman244827()
+try:
+    for _ in tqdm(range(N_TRAIN_GAMES)):
+        game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
+                    [agent, RandomPacman(), RandomPacman(), RandomPacman()], True, delay=0)
+        game.run()
 
-for _ in tqdm(range(N_TRAIN_GAMES)):
-    game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
-                [agent, RandomPacman(), RandomPacman(), RandomPacman()], False, delay=0)
-    game.run()
+    print(f'agent train winrate: {agent.get_winrate():.2f}')
+    print(f'agent avg score: {agent.get_avg_score():.2f}')
+    agent.reset_winrate()
+    agent.turn_off_learning()
+    agent.save()
 
-print(f'agent train winrate: {agent.get_winrate():.2f}')
-print(f'agent avg score: {agent.get_avg_score():.2f}')
-agent.reset_winrate()
+    for _ in tqdm(range(N_TEST_GAMES)):
+        game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
+                    [agent, RandomPacman(), RandomPacman(), RandomPacman()], True, delay=0)
+        game.run()
 
-for _ in tqdm(range(N_TEST_GAMES)):
-    game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
-                [agent, RandomPacman(), RandomPacman(), RandomPacman()], True, delay=0)
-    game.run()
+    print(f'agent test winrate: {agent.get_winrate():.2f}')
+    print(f'agent avg score: {agent.get_avg_score():.2f}')
 
-print(f'agent test winrate: {agent.get_winrate():.2f}')
-print(f'agent avg score: {agent.get_avg_score():.2f}')
-agent.save()
+except KeyboardInterrupt:
+    print('Program terminated')
+    print(f'agent train winrate: {agent.get_winrate():.2f}')
+    print(f'agent avg score: {agent.get_avg_score():.2f}')
+    agent.save()
+
+
 
 
 
