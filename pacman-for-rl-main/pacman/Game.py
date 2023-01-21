@@ -11,7 +11,6 @@ from .GameState import GameState
 from copy import deepcopy
 from .Helpers import can_move_in_direction, direction_to_new_position
 
-
 BIG_POINT_VALUE = 5
 BIG_BIG_POINT_VALUE = 20
 POINT_VALUE = 1
@@ -31,19 +30,21 @@ def my_itemgetter(*items):
             return tuple(obj[item] for item in items)
     return g
 
-
 class Game:
     def __init__(self, board: List[str], ghosts: List[Ghost], players: List[Pacman], display_mode_on=False, delay=100):
         self.board = board
         self.display_mode_on = display_mode_on
         self.delay = delay
+        self.skip_ghosts = False
 
         self.players = players
+        self.all_players = players.copy()
+        self.players_colors = dict(zip(players, ['yellow', 'red', 'cyan', 'white']))
         self.ghosts = ghosts
 
         self.cell_size = 550 // (len(board[0]))
 
-        self.player_size = self.cell_size // 2
+        self.player_size = self.cell_size
         self.point_size = self.cell_size // 6
         self.big_point_size = self.cell_size // 3
         self.big_big_point_size = self.cell_size // 2
@@ -131,14 +132,10 @@ class Game:
                                                  self.cell_size))
 
         for player in self.players:
-            color = (0, 0, 255) if player in self.eatable_timers else (255, 255, 0)
+            color = self.players_colors[player]
             position = self.positions[player]
             pygame.draw.rect(self.screen, color,
-                             pygame.Rect(self.cell_size * position.x, self.cell_size * position.y, self.cell_size,
-                                         self.cell_size))
-            pygame.draw.rect(self.screen, color, pygame.Rect(position.x * self.cell_size + self.player_size // 2,
-                                                             position.y * self.cell_size + self.player_size // 2,
-                                                             self.player_size, self.player_size))
+                             pygame.Rect(self.cell_size * position.x - self.player_size // 2, self.cell_size * position.y - self.player_size // 2, self.player_size, self.player_size))
             self.screen.blit(self.player_image,
                              (position.x * self.cell_size - self.player_size // 2,
                               position.y * self.cell_size - self.player_size // 2))
@@ -207,13 +204,11 @@ class Game:
                 pygame.time.delay(self.delay)
 
             if not self.players:  # bye
-                # print("you lost")
                 return self.final_scores
 
             if not self.points and not self.big_points:
                 for player in self.players:
                     player.on_win(self.final_scores)
-                # print('you won')  # congrats!
                 return self.final_scores
 
             self.update_eatable_timers()
@@ -358,7 +353,9 @@ class Game:
             self.positions[player] = direction_to_new_position(self.positions[player], moves[player])
         for ghost in self.ghosts:
             old_positions[ghost] = self.positions[ghost]
-            self.positions[ghost] = direction_to_new_position(self.positions[ghost], self.directions[ghost])
+            if self.skip_ghosts:
+                self.positions[ghost] = direction_to_new_position(self.positions[ghost], self.directions[ghost])
+        self.skip_ghosts = not self.skip_ghosts
         return old_positions
 
     def update_ghost_movement_directions(self):

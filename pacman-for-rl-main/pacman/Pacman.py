@@ -123,7 +123,7 @@ class Pacman244827(Pacman):
             features_function: Callable = None,
             alpha: float = 0.1,
             epsilon: float = 1,
-            eps_dec: float = 0.001,
+            eps_dec: float = 0.0001,
             eps_min: float = 0.01,
             gamma: float = 0.9,
             weights_fname: Optional[str] = None
@@ -173,7 +173,7 @@ class Pacman244827(Pacman):
         self.curr_score = 0
         self.scores = []
         self.idle = 0
-        self._batch_size = 1
+        self._batch_size = 16
         self.memory = ReplayBuffer(100000)
 
     def __str__(self):
@@ -198,48 +198,6 @@ class Pacman244827(Pacman):
 
         me = state.you['position']
         target: Position = me + self.__DIRECTIONS[action]
-
-        # # Am I even in the frame
-        # if target in state.walls or 0 > target.x > state.board_size[0] or 0 > target.y > state.board_size[1]:
-        #     feats.append(1)
-        # else:
-        #     feats.append(-1)
-
-        # # Distance to the closest ghost that could hurt us
-        # dists = [norm(self.__manhattanDistance(target, ghost['position'])) if not ghost['is_eatable'] else 0 for ghost
-        #          in state.ghosts]
-        # if len(dists):
-        #     feats.append((min(dists)))
-        # else:
-        #     feats.append(1)
-
-        # # Distance to the closest ghost that we can hurt
-        # dists = [norm(self.__manhattanDistance(target, ghost['position'])) if ghost['is_eatable'] else 0 for ghost in
-        #          state.ghosts]
-        # if len(dists):
-        #     feats.append((min(dists)))
-        # else:
-        #     feats.append(1)
-
-        # # Distance to the closest other pacman that could hurt us
-        # dists = [norm(self.__manhattanDistance(target, other['position'])) if not other['is_eatable'] or not other[
-        #     'is_indestructible'] else x_size + y_size for other in state.other_pacmans]
-        # if len(dists):
-        #     feats.append((min(dists)))
-        # else:
-        #     feats.append(1)
-
-        # Distance to centroid of available points and closest point
-        # if len(state.points):
-        #     xs = [point.x for point in state.points]
-        #     ys = [point.y for point in state.points]
-        #     centroid = Position(np.average(xs), np.average(ys))
-        #     feats.append(norm(self.__manhattanDistance(target, centroid)))
-        #     dists = [norm(self.__manhattanDistance(target, point)) for point in state.points]
-        #     feats.append(min(dists))
-        # else:
-        #     # feats.append(1)
-        #     feats.append(1)
 
         radius = 3
         for n in range(1, radius + 1):
@@ -276,21 +234,6 @@ class Pacman244827(Pacman):
         n_norm = lambda x: __map(x, 0, x_size * y_size, 0, 1)
         feats.append(n_norm(len(state.points)))
 
-        # # Distance to the closest big point
-        # feats.append(self.min_from_list(target, state.big_points, norm))
-        #
-        # # distance to the closest big_big point
-        # feats.append(self.min_from_list(target, state.big_big_points, norm))
-        #
-        # # distance to the closest indestructible point
-        # feats.append(self.min_from_list(target, state.indestructible_points, norm))
-        #
-        # # distance to the closest phasing point
-        # feats.append(self.min_from_list(target, state.phasing_points, norm))
-        #
-        # #distance to the closest double points
-        # feats.append(self.min_from_list(target, state.double_points, norm))
-
         return np.array(feats)
 
     def min_from_list(self, target: Position, col: Iterable, norm: Callable) -> float:
@@ -309,20 +252,21 @@ class Pacman244827(Pacman):
         gamma = self.gamma
         lr = self.alpha
 
-        # states, actions, rewards, _states, terminals = self.memory.sample_buffer(self._batch_size)
+        states, actions, rewards, _states, terminals = self.memory.sample_buffer(self._batch_size)
 
-        # w_update = 0
-        # for state, action, reward, _state, terminal in zip(states, actions, rewards, _states, terminals):
-        #     delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
-        # w_update += lr * delta * self.features_function(state, action)
-        # self.weights += 1/self._batch_size * w_update
+        w_update = 0
+        delta = 0
+        for state, action, reward, _state, terminal in zip(states, actions, rewards, _states, terminals):
+            delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
+        w_update += lr * delta * self.features_function(state, action)
+        self.weights += 1/self._batch_size * w_update
 
-        delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * (1 - terminal)) - self.__q(state,
-                                                                                                              action)
-        self.weights += lr * delta * self.features_function(state, action)
+        # delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * (1 - terminal)) - self.__q(state,
+        #                                                                                                       action)
+        # self.weights += lr * delta * self.features_function(state, action)
 
         self.epsilon -= self.eps_dec
-        self.epsilon += self.eps_dec * self.idle
+        # self.epsilon += self.eps_dec * self.idle
         self.epsilon = min(max(self.epsilon, self.eps_min), 1)
 
     def get_best_action(self, state: GameState) -> Direction:
