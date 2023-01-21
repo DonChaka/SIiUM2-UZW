@@ -105,7 +105,7 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 15
+    __def_n_features = 17
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -121,7 +121,7 @@ class Pacman244827(Pacman):
             n_weights: int = 1,
             action_space: tuple = tuple(Direction),
             features_function: Callable = None,
-            alpha: float = 0.1,
+            alpha: float = 0.001,
             epsilon: float = 1,
             eps_dec: float = 0.0001,
             eps_min: float = 0.01,
@@ -199,7 +199,14 @@ class Pacman244827(Pacman):
         me = state.you['position']
         target: Position = me + self.__DIRECTIONS[action]
 
+        # Radius check
+
         radius = 3
+
+        scared_ghosts = [ghost['position'] for ghost in state.ghosts if ghost['is_eatable']]
+        angry_ghosts = [ghost['position'] for ghost in state.ghosts if not ghost['is_eatable']]
+        other_pacmans = [pacman['position'] for pacman in state.other_pacmans]
+
         for n in range(1, radius + 1):
             n_scared_ghosts = 0
             n_angry_ghosts = 0
@@ -208,20 +215,20 @@ class Pacman244827(Pacman):
                 sus = Position(x, y) + target
                 if 0 > sus.x > x_size or 0 > sus.y > x_size:
                     continue
-                if sus in [ghost['position'] for ghost in state.ghosts if ghost['is_eatable']]:
+                if sus in scared_ghosts:
                     n_scared_ghosts += 1
 
-                if sus in [ghost['position'] for ghost in state.ghosts if not ghost['is_eatable']]:
+                if sus in angry_ghosts:
                     n_angry_ghosts += 1
 
-                if sus in [pacman['position'] for pacman in state.other_pacmans]:
+                if sus in other_pacmans:
                     n_other_pacmans += 1
 
             feats.append(__map(n_scared_ghosts, 0, n * 2 + 1, -1, 1))
             feats.append(__map(n_angry_ghosts, 0, n * 2 + 1, -1, 1))
             feats.append(__map(n_other_pacmans, 0, n * 2 + 1, -1, 1))
 
-        for n in range(1, radius * 2):
+        for n in range(1, radius + 1):
             n_points = 0
             for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
                 sus = Position(x, y) + target
@@ -233,6 +240,14 @@ class Pacman244827(Pacman):
 
         n_norm = lambda x: __map(x, 0, x_size * y_size, 0, 1)
         feats.append(n_norm(len(state.points)))
+
+
+        # flags
+
+        feats.append(1 if target in scared_ghosts else -1)
+        feats.append(1 if target in angry_ghosts else -1)
+        feats.append(1 if target in other_pacmans else -1)
+        feats.append(1 if target in state.points else -1)
 
         return np.array(feats)
 
@@ -252,18 +267,18 @@ class Pacman244827(Pacman):
         gamma = self.gamma
         lr = self.alpha
 
-        states, actions, rewards, _states, terminals = self.memory.sample_buffer(self._batch_size)
+        # states, actions, rewards, _states, terminals = self.memory.sample_buffer(self._batch_size)
+        #
+        # w_update = 0
+        # delta = 0
+        # for state, action, reward, _state, terminal in zip(states, actions, rewards, _states, terminals):
+        #     delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
+        # w_update += lr * delta * self.features_function(state, action)
+        # self.weights += 1/self._batch_size * w_update
 
-        w_update = 0
-        delta = 0
-        for state, action, reward, _state, terminal in zip(states, actions, rewards, _states, terminals):
-            delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
-        w_update += lr * delta * self.features_function(state, action)
-        self.weights += 1/self._batch_size * w_update
-
-        # delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * (1 - terminal)) - self.__q(state,
-        #                                                                                                       action)
-        # self.weights += lr * delta * self.features_function(state, action)
+        delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * (1 - terminal)) - self.__q(state,
+                                                                                                              action)
+        self.weights += lr * delta * self.features_function(state, action)
 
         self.epsilon -= self.eps_dec
         # self.epsilon += self.eps_dec * self.idle
