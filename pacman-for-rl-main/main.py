@@ -43,7 +43,7 @@ board_big = ["wwwwwwwwwwwwwwwwwwwwwwwwwwww",
              "wwwwwwwwwwwwwwwwwwwwwwwwwwww"]
 
 
-N_TRAIN_GAMES = 250
+N_TRAIN_GAMES = 500
 N_TEST_GAMES = 100
 
 agent = Pacman244827()

@@ -105,7 +105,7 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 17
+    __def_n_features = 25
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -192,8 +192,6 @@ class Pacman244827(Pacman):
         x_size = state.board_size[0]
         y_size = state.board_size[1]
 
-        norm = lambda x: __map(x, 0, x_size + y_size, -1, 1)
-
         feats = []
 
         me = state.you['position']
@@ -201,7 +199,7 @@ class Pacman244827(Pacman):
 
         # Radius check
 
-        radius = 3
+        radius = 5
 
         scared_ghosts = [ghost['position'] for ghost in state.ghosts if ghost['is_eatable']]
         angry_ghosts = [ghost['position'] for ghost in state.ghosts if not ghost['is_eatable']]
@@ -211,6 +209,7 @@ class Pacman244827(Pacman):
             n_scared_ghosts = 0
             n_angry_ghosts = 0
             n_other_pacmans = 0
+            n_points = 0
             for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
                 sus = Position(x, y) + target
                 if 0 > sus.x > x_size or 0 > sus.y > x_size:
@@ -224,23 +223,15 @@ class Pacman244827(Pacman):
                 if sus in other_pacmans:
                     n_other_pacmans += 1
 
+                if sus in state.points:
+                    n_points += 1
+
             feats.append(__map(n_scared_ghosts, 0, n * 2 + 1, -1, 1))
             feats.append(__map(n_angry_ghosts, 0, n * 2 + 1, -1, 1))
             feats.append(__map(n_other_pacmans, 0, n * 2 + 1, -1, 1))
-
-        for n in range(1, radius + 1):
-            n_points = 0
-            for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
-                sus = Position(x, y) + target
-                if 0 > sus.x > x_size or 0 > sus.y > x_size:
-                    continue
-                if sus in state.points:
-                    n_points += 1
             feats.append(__map(n_points, 0, n * 2 + 1, -1, 1))
 
-        n_norm = lambda x: __map(x, 0, x_size * y_size, 0, 1)
-        feats.append(n_norm(len(state.points)))
-
+        feats.append(__map(len(state.points), 0, x_size * y_size, 0, 1))
 
         # flags
 
