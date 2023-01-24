@@ -12,19 +12,6 @@ from .GameState import GameState
 from .Direction import Direction
 
 
-class ExtendableList(list):
-    def __setitem__(self, key, value):
-        if isinstance(key, slice):
-            if self.__len__() < key.start + 1:
-                self.extend([0] * (key.start + 1 - self.__len__()))
-            if self.__len__() < key.stop + 1:
-                self.extend([0] * (key.stop - self.__len__()))
-        else:
-            while self.__len__() < key + 1:
-                self.extend([0] * (key + 1 - self.__len__()))
-        super().__setitem__(key, value)
-
-
 class ReplayBuffer:
     def __init__(self, mem_size):
         self.mem_size = mem_size
@@ -105,7 +92,7 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 25
+    __def_n_features = 37
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -121,11 +108,11 @@ class Pacman244827(Pacman):
             n_weights: int = 1,
             action_space: tuple = tuple(Direction),
             features_function: Callable = None,
-            alpha: float = 0.001,
+            alpha: float = 0.0005,
             epsilon: float = 1,
             eps_dec: float = 0.0001,
             eps_min: float = 0.01,
-            gamma: float = 0.9,
+            gamma: float = 0.95,
             weights_fname: Optional[str] = None
     ):
         """
@@ -172,9 +159,6 @@ class Pacman244827(Pacman):
         self.__n_loses = 0
         self.curr_score = 0
         self.scores = []
-        self.idle = 0
-        self._batch_size = 16
-        self.memory = ReplayBuffer(100000)
 
     def __str__(self):
         return self.name
@@ -210,6 +194,8 @@ class Pacman244827(Pacman):
             n_angry_ghosts = 0
             n_other_pacmans = 0
             n_points = 0
+            n_big_points = 0
+            n_double_points = 0
             for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
                 sus = Position(x, y) + target
                 if 0 > sus.x > x_size or 0 > sus.y > x_size:
@@ -226,10 +212,18 @@ class Pacman244827(Pacman):
                 if sus in state.points:
                     n_points += 1
 
+                if sus in state.big_points:
+                    n_big_points += 1
+
+                if sus in state.double_points:
+                    n_double_points += 1
+
             feats.append(__map(n_scared_ghosts, 0, n * 2 + 1, -1, 1))
             feats.append(__map(n_angry_ghosts, 0, n * 2 + 1, -1, 1))
             feats.append(__map(n_other_pacmans, 0, n * 2 + 1, -1, 1))
             feats.append(__map(n_points, 0, n * 2 + 1, -1, 1))
+            feats.append(__map(n_big_points, 0, n * 2 + 1, -1, 1))
+            feats.append(__map(n_double_points, 0, n * 2 + 1, -1, 1))
 
         feats.append(__map(len(state.points), 0, x_size * y_size, 0, 1))
 
@@ -239,6 +233,8 @@ class Pacman244827(Pacman):
         feats.append(1 if target in angry_ghosts else -1)
         feats.append(1 if target in other_pacmans else -1)
         feats.append(1 if target in state.points else -1)
+        feats.append(1 if target in state.big_points else -1)
+        feats.append(1 if target in state.double_points else -1)
 
         return np.array(feats)
 
@@ -252,27 +248,17 @@ class Pacman244827(Pacman):
         return float(np.dot(self.weights, self.features_function(state, action)))
 
     def __update(self, state, action, reward, _state, terminal) -> None:
-        if (self.memory.mem_cntr < self._batch_size) or (None in self.transition_cache.values()) or self.alpha is 0:
+        if None in self.transition_cache.values() or self.alpha is 0:
             return
 
         gamma = self.gamma
         lr = self.alpha
-
-        # states, actions, rewards, _states, terminals = self.memory.sample_buffer(self._batch_size)
-        #
-        # w_update = 0
-        # delta = 0
-        # for state, action, reward, _state, terminal in zip(states, actions, rewards, _states, terminals):
-        #     delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * terminal) - self.__q(state, action)
-        # w_update += lr * delta * self.features_function(state, action)
-        # self.weights += 1/self._batch_size * w_update
 
         delta = (reward + gamma * self.__q(_state, self.get_best_action(_state)) * (1 - terminal)) - self.__q(state,
                                                                                                               action)
         self.weights += lr * delta * self.features_function(state, action)
 
         self.epsilon -= self.eps_dec
-        # self.epsilon += self.eps_dec * self.idle
         self.epsilon = min(max(self.epsilon, self.eps_min), 1)
 
     def get_best_action(self, state: GameState) -> Direction:
@@ -292,7 +278,6 @@ class Pacman244827(Pacman):
         if not invalid_move:
             self.transition_cache['_state'] = state
         if None not in self.transition_cache.values():
-            self.memory.store_transition(**self.transition_cache)
             self.__update(**self.transition_cache)
 
         epsilon = self.epsilon
@@ -315,19 +300,16 @@ class Pacman244827(Pacman):
         self.alpha = 0
 
     def give_points(self, points: int) -> None:
-        if not points:
-            self.idle += 1
-        else:
-            self.idle = max(self.idle - 5, 0)
         self.curr_score += points
+        # if not points:
+        #     points = -1
+
         self.transition_cache['reward'] = points
 
     def on_game_end(self) -> None:
         self.scores.append(self.curr_score)
         self.curr_score = 0
-        self.idle = 0
         self.transition_cache['terminal'] = 1
-        self.memory.store_transition(**self.transition_cache)
         self.__update(**self.transition_cache)
         self.transition_cache['terminal'] = 0
 
