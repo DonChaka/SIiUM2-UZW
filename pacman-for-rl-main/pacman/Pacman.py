@@ -92,7 +92,8 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 39
+    __def_n_features = 44
+    __def_n_steps = 6
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -110,7 +111,7 @@ class Pacman244827(Pacman):
             features_function: Callable = None,
             alpha: float = 0.0005,
             epsilon: float = 1,
-            eps_dec: float = 0.0001,
+            eps_dec: float = 0.001,
             eps_min: float = 0.01,
             gamma: float = 0.95,
             weights_fname: Optional[str] = None
@@ -138,6 +139,9 @@ class Pacman244827(Pacman):
         else:
             self.features_function = self.__feats_function
             self.n_features = self.__def_n_features
+            self.dirs_zips = {}
+            self.paths_dict = {}
+            self.__generate_paths()
 
         self.alpha = alpha
         self.epsilon = epsilon
@@ -166,6 +170,21 @@ class Pacman244827(Pacman):
     def __repr__(self):
         return self.name
 
+    def __generate_paths(self):
+        for n in range(1, self.__def_n_steps + 1):
+            self.dirs_zips[n] = [list(self.__DIRECTIONS.values()) for _ in range(n)]
+            self.paths_dict[n] = []
+            for path in product(*self.dirs_zips[n]):
+                self.paths_dict[n].append(path)
+
+            for path in self.paths_dict[n]:
+                taken = [Position(0, 0)]
+                for step in path:
+                    _step = taken[-1] + step
+                    if _step in taken:
+                        self.paths_dict[n].remove(path)
+                        break
+
     def __feats_function(self, state: GameState, action: Direction) -> ndarray:
         def __map(value, leftMin, leftMax, rightMin, rightMax):
             leftSpan = leftMax - leftMin
@@ -181,25 +200,38 @@ class Pacman244827(Pacman):
         me = state.you['position']
         target: Position = me + self.__DIRECTIONS[action]
 
-        # Radius check
-
-        radius = 5
-
+        # Steps check
         scared_ghosts = [ghost['position'] for ghost in state.ghosts if ghost['is_eatable']]
         angry_ghosts = [ghost['position'] for ghost in state.ghosts if not ghost['is_eatable']]
         other_pacmans = [pacman['position'] for pacman in state.other_pacmans]
 
-        for n in range(1, radius + 1):
+        for n in range(1, self.__def_n_steps + 1):
             n_scared_ghosts = 0
             n_angry_ghosts = 0
             n_other_pacmans = 0
             n_points = 0
             n_big_points = 0
             n_double_points = 0
-            for x, y in product(range(-n, n + 1, 1), range(-n, n + 1, 1)):
-                sus = Position(x, y) + target
-                if 0 > sus.x > x_size or 0 > sus.y > x_size:
+            sus_takens = []
+            for path in self.paths_dict[n].copy():
+                taken = [target]
+                breached = False
+
+                for step in path:
+                    _step = taken[-1] + step
+                    if _step in state.walls or 0 > _step.x > x_size or 0 > _step.y > x_size:
+                        breached = True
+                        break
+                    if (_step in angry_ghosts or _step in other_pacmans) and len(taken) is not n:
+                        breached = True
+                        break
+                    taken.append(_step)
+
+                if breached or taken[-1] in sus_takens:
                     continue
+
+                sus = taken[-1]
+                sus_takens.append(sus)
 
                 if sus in scared_ghosts:
                     n_scared_ghosts += 1
