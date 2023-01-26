@@ -1,5 +1,5 @@
 from pacman.Ghost import Ghosts
-from pacman.Pacman import RandomPacman, Pacman244827
+from pacman.Pacman import RandomPacman, Pacman244827, Pacman244827v1
 from pacman.Game import Game
 from tqdm import tqdm
 
@@ -43,38 +43,36 @@ board_big = ["wwwwwwwwwwwwwwwwwwwwwwwwwwww",
              "wwwwwwwwwwwwwwwwwwwwwwwwwwww"]
 
 
-N_TRAIN_GAMES = 500
+N_TRAIN_GAMES = 150
 N_TEST_GAMES = 100
 
-agent = Pacman244827()
+agent0 = Pacman244827("main_pacman_0")
+agent1 = Pacman244827("main_pacman_1")
+agent2 = Pacman244827("main_pacman_2")
+agent3 = Pacman244827("main_pacman_3")
+
 try:
     for _ in tqdm(range(N_TRAIN_GAMES)):
         game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
-                    [agent, RandomPacman(), RandomPacman(), RandomPacman()], True, delay=0)
+                    [agent0, agent1, agent2, agent3], False, delay=0)
         game.run()
 
-    print(f'agent train winrate: {agent.get_winrate():.2f}')
-    print(f'agent avg score: {agent.get_avg_score():.2f}')
-    agent.reset_winrate()
-    agent.turn_off_learning()
-    agent.save()
+    print(f'agent train winrate: {agent0.get_winrate():.2f}')
+    print(f'agent avg score: {agent0.get_avg_score():.2f}')
+    agent0.reset_winrate()
+    agent0.turn_off_learning()
+    agent0.save()
 
     for _ in tqdm(range(N_TEST_GAMES)):
         game = Game(board_big, [Ghosts.RED, Ghosts.PINK, Ghosts.BLUE, Ghosts.ORANGE],
-                    [agent, RandomPacman(), RandomPacman(), RandomPacman()], True, delay=0)
+                    [agent0, agent1, agent2, agent3], True, delay=0)
         game.run()
 
-    print(f'agent test winrate: {agent.get_winrate():.2f}')
-    print(f'agent avg score: {agent.get_avg_score():.2f}')
+    print(f'agent test winrate: {agent0.get_winrate():.2f}')
+    print(f'agent avg score: {agent0.get_avg_score():.2f}')
 
 except KeyboardInterrupt:
     print('Program terminated')
-    print(f'agent train winrate: {agent.get_winrate():.2f}')
-    print(f'agent avg score: {agent.get_avg_score():.2f}')
-    agent.save()
-
-
-
-
-
-
+    print(f'agent train winrate: {agent0.get_winrate():.2f}')
+    print(f'agent avg score: {agent0.get_avg_score():.2f}')
+    agent0.save()

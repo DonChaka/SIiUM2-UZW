@@ -92,7 +92,7 @@ class Pacman244827(Pacman):
         Direction.RIGHT: Position(1, 0),
     }
 
-    __def_n_features = 37
+    __def_n_features = 39
 
     @staticmethod
     def __manhattanDistance(start: Position, other: Position) -> float:
@@ -200,6 +200,7 @@ class Pacman244827(Pacman):
                 sus = Position(x, y) + target
                 if 0 > sus.x > x_size or 0 > sus.y > x_size:
                     continue
+
                 if sus in scared_ghosts:
                     n_scared_ghosts += 1
 
@@ -235,6 +236,7 @@ class Pacman244827(Pacman):
         feats.append(1 if target in state.points else -1)
         feats.append(1 if target in state.big_points else -1)
         feats.append(1 if target in state.double_points else -1)
+        feats.append(1 if target in state.indestructible_points else -1)
 
         return np.array(feats)
 
@@ -301,8 +303,6 @@ class Pacman244827(Pacman):
 
     def give_points(self, points: int) -> None:
         self.curr_score += points
-        # if not points:
-        #     points = -1
 
         self.transition_cache['reward'] = points
 
@@ -338,8 +338,8 @@ class Pacman244827(Pacman):
     def save(self) -> None:
         dt_string = datetime.now().strftime("%d-%m-%Y_%H;%M;%S")
         winrate_str = str(int(self.get_winrate()))
-        # fname = f'{self.name}_winrate_{winrate_str}_{dt_string}.txt'
-        fname = f'{self.name}.txt'
+        fname = f'{self.name}_winrate_{winrate_str}_{dt_string}.txt'
+        # fname = f'{self.name}.txt'
         savetxt(fname=fname, X=self.weights, delimiter=',')
 
 
